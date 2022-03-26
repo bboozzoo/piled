@@ -1,0 +1,98 @@
+// Copyright Maciej Borzecki 2022.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+// 1. Redistributions of source code must retain the above copyright notice,
+// this list of conditions and the following disclaimer.
+//
+// 2. Redistributions in binary form must reproduce the above copyright notice,
+// this list of conditions and the following disclaimer in the documentation
+// and/or other materials provided with the distribution.
+//
+// 3. Neither the name of the copyright holder nor the names of its contributors
+// may be used to endorse or promote products derived from this software without
+// specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+// ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
+
+syntax = "proto3";
+option go_package = "github.com/bboozzoo/piled/pile/proto";
+
+// Resources assigned to a job. Keep it simple, each resource is described is a
+// string in a format that is applicable to a given cgroup controller knob. See
+// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
+message Resources {
+  // Max CPU, format as for cpu.max
+  string CPU_max = 1;
+  // Max IO, format as for io.max
+  string IO_max = 2;
+  // Max memory, format as for memory.max
+  string memory_max = 3;
+}
+
+// JobStartRequest carries the command to run.
+message JobStartRequest {
+  // Token carrying authorization data
+  string token = 1;
+  // Command with its arguments.
+  repeated string command = 2;
+  Resources resources = 3;
+}
+
+// JobStartResults carries the result.
+message JobStartResult {
+  // Error, not empty if the request failed.
+  string error = 1;
+  // ID of he job, fur use with subsequent requests.
+  string ID = 2;
+}
+
+message OutputChunk {
+  string chunk = 1;
+}
+
+// JobRequest identifies the subject of the request.
+message JobRequest {
+  // Token carrying authorization data
+  string token = 1;
+  // ID of the job, as obtained when starting.
+  string ID = 2;
+}
+
+message StopResult {
+  // Error is non empty when the request failed.
+  string error = 1;
+  // Status of the job, as in its return value.
+  int32 exit_status = 2;
+}
+
+message StatusResult {
+  string error = 1;
+  bool active = 2;
+  int32 exit_status = 3;
+  uint32 processes = 4;
+}
+
+// JobPileManager is a service which can run and manage pile of jobs on the
+// caller's behalf.
+service JobPileManager {
+  // Start a job and return the result which contains the job ID.
+  rpc Start(JobStartRequest) returns (JobStartResult);
+  // Stop a given job.
+  rpc Stop(JobRequest)  returns (StopResult);
+  // Status obtains the status of a given job.
+  rpc Status(JobRequest) returns (StatusResult);
+  // Output obtains the output of a given job.
+  rpc Output(JobRequest) returns (stream OutputChunk);
+}
