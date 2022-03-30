@@ -80,12 +80,36 @@ func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult,
 }
 
 // Output obtains the output of a given job.q
-func (p *piled) Output(req *pb.JobRequest, _ pb.JobPileManager_OutputServer) error {
+func (p *piled) Output(req *pb.JobRequest, out pb.JobPileManager_OutputServer) error {
 	logrus.Tracef("output %+v", req)
 	if !validJobID(req.ID) {
 		return fmt.Errorf("cannot stop job with invalid id %q", req.ID)
 	}
-	return errNotImplemented
+	logs, cancel, err := runner.JobOutput(req.ID)
+	if err != nil {
+		return fmt.Errorf("cannot start collecting job output: %v", err)
+	}
+
+Loop:
+	for {
+		logrus.Tracef("waiting for logs")
+		select {
+		case lines, ok := <-logs:
+			logrus.Tracef("got logs: %s", lines)
+			if !ok {
+				logrus.Tracef("logs closed")
+				break Loop
+			}
+			if err := out.Send(&pb.OutputChunk{Chunk: string(lines)}); err != nil {
+				logrus.Tracef("send failed: %v", err)
+				cancel()
+			}
+		case <-out.Context().Done():
+			cancel()
+		}
+	}
+	logrus.Tracef("output done")
+	return nil
 }
 
 func New() pb.JobPileManagerServer {
