@@ -29,10 +29,16 @@
 syntax = "proto3";
 option go_package = "github.com/bboozzoo/piled/pile/proto";
 
+message Resources {
+  uint32 CPUWeight = 1;
+  uint32 IOWeight = 2;
+  uint64 MemoryMax = 3;
+}
 // JobStartRequest carries the command to run.
 message JobStartRequest {
   // Command with its arguments.
   repeated string command = 1;
+  Resources resources = 2;
 }
 
 // JobStartResults carries the result.
