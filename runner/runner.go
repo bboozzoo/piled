@@ -3,6 +3,8 @@ package runner
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
@@ -109,6 +111,107 @@ func JobStatus(name string) (*Status, error) {
 	return &status, nil
 }
 
-func JobOutput(jobID string) (output chan []byte, cancel func(), err error) {
-	return nil, nil, nil
+type journalPipe struct {
+	ctx       context.Context
+	out       chan []byte
+	unit      string
+	cmd       *exec.Cmd
+	cancel    func()
+	lineBuf   *bytes.Buffer
+	childWait chan struct{}
+}
+
+func (j *journalPipe) Write(d []byte) (int, error) {
+	logrus.Tracef("write chunk:\n%s", string(d))
+	if len(d) == 0 {
+		// done
+		defer j.cancel()
+		return 0, io.EOF
+	}
+	// logrus.Tracef("accumulated bytes before:\n%s", j.lineBuf.String())
+	j.lineBuf.Write(d)
+	// logrus.Tracef("accumulated bytes buf:\n%s", j.lineBuf.String())
+	b := j.lineBuf.Bytes()
+	for {
+		if len(b) == 0 {
+			j.lineBuf.Truncate(0)
+			break
+		}
+		idx := bytes.IndexByte(b, '\n')
+		if idx == -1 {
+			// no more newlines
+
+			// NewBuffer() does not copy the bytes, so copy them
+			// through a Write() such that we don't loose the buffer
+			j.lineBuf = &bytes.Buffer{}
+			j.lineBuf.Write(b)
+			logrus.Tracef("no newline, chunk:\n%v", j.lineBuf.String())
+			break
+		}
+		// logrus.Tracef("found newline at idx: %v", idx)
+		line := b[0:idx]
+		logrus.Tracef("line: %s", line)
+		b = b[idx+1:]
+		var out map[string]string
+		if err := json.Unmarshal(line, &out); err != nil {
+			logrus.Tracef("error decoding: %v", err)
+			defer j.cancel()
+			return 0, err
+		}
+		// logrus.Tracef("got data: %v", out)
+		logrus.Tracef("unit: %v", out["_SYSTEMD_UNIT"])
+		if out["_SYSTEMD_UNIT"] == j.unit {
+			logrus.Tracef("matching unit")
+			j.out <- []byte(out["MESSAGE"])
+		}
+	}
+
+	return len(d), nil
+}
+
+func (j *journalPipe) wait() {
+	logrus.Tracef("waiting for journalctl")
+	if err := j.cmd.Wait(); err != nil {
+		logrus.Tracef("wait failed: %v", err)
+	}
+	j.cancel()
+	close(j.childWait)
+}
+
+func (j *journalPipe) Process() {
+	logrus.Tracef("- waiting for done")
+	<-j.ctx.Done()
+	logrus.Tracef("- done")
+	if err := j.cmd.Process.Kill(); err != nil {
+		logrus.Tracef("cannot kill journal: %v", err)
+	}
+	close(j.out)
+	<-j.childWait
+}
+
+func JobOutput(name string) (output chan []byte, cancel func(), err error) {
+	// TODO check if unit even exists
+	unitName := name + ".service"
+	cmd := exec.Command("journalctl",
+		"--output", "json",
+		"--follow",
+		"--unit", unitName)
+	ctx, cancel := context.WithCancel(context.Background())
+	jp := &journalPipe{
+		out:       make(chan []byte, 1),
+		ctx:       ctx,
+		cmd:       cmd,
+		cancel:    cancel,
+		unit:      unitName,
+		lineBuf:   &bytes.Buffer{},
+		childWait: make(chan struct{}, 1),
+	}
+	cmd.Stdout = jp
+	if err := cmd.Start(); err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("cannot execute staus command: %v", err)
+	}
+	go jp.Process()
+	go jp.wait()
+	return jp.out, cancel, nil
 }
