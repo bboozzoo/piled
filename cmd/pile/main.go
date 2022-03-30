@@ -15,6 +15,10 @@ import (
 
 type cmdStart struct {
 	clientMixin
+	MemoryMax uint64 `long:"memory-max" description:"Max memory for this job"`
+	CPUWeight uint   `long:"cpu-weight" description:"CPU weight of this job"`
+	IOWeight  uint   `long:"io-weight" description:"IO weight of this job"`
+
 	Positional struct {
 		Args []string `positional-arg-name:"arg" required:"1"`
 	} `positional-args:"yes"`
@@ -27,13 +31,22 @@ type cmdStop struct {
 	} `positional-args:"yes"`
 }
 
+type cmdStatus struct {
+	clientMixin
+
+	Positional struct {
+		ID string `positional-arg-name:"job-ID" required:"yes"`
+	} `positional-args:"yes"`
+}
+
 type clientMixin struct {
 	Address string `long:"address" description:"server address"`
 }
 
 type options struct {
-	CmdStart cmdStart `command:"start"`
-	Cmdstop  cmdStop  `command:"stop"`
+	CmdStart  cmdStart  `command:"start"`
+	CmdStop   cmdStop   `command:"stop"`
+	CmdStatus cmdStatus `command:"status"`
 }
 
 func main() {
@@ -87,10 +100,10 @@ func (c *cmdStop) Execute(args []string) error {
 		return fmt.Errorf("cannot connect: %w", err)
 	}
 	defer conn.Close()
-	js := pb.JobRequest{
+	jr := pb.JobRequest{
 		ID: jobID,
 	}
-	res, err := jm.Stop(context.Background(), &js)
+	res, err := jm.Stop(context.Background(), &jr)
 	if err != nil {
 		return fmt.Errorf("cannot stop job: %w", err)
 	}
@@ -98,5 +111,24 @@ func (c *cmdStop) Execute(args []string) error {
 		return fmt.Errorf("cannot stop job: %v", res.Error)
 	}
 	fmt.Printf("job %q stopped, status %v\n", jobID, res.Status)
+	return nil
+}
+
+func (c *cmdStatus) Execute(args []string) error {
+	jobID := c.Positional.ID
+
+	conn, jm, err := c.client()
+	if err != nil {
+		return fmt.Errorf("cannot connect: %w", err)
+	}
+	defer conn.Close()
+	jr := pb.JobRequest{
+		ID: jobID,
+	}
+	res, err := jm.Status(context.Background(), &jr)
+	if err != nil {
+		return fmt.Errorf("cannot query job status: %w", err)
+	}
+	fmt.Printf("job status: %+v\n", res)
 	return nil
 }
