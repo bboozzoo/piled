@@ -39,6 +39,14 @@ type cmdStatus struct {
 	} `positional-args:"yes"`
 }
 
+type cmdOutput struct {
+	clientMixin
+
+	Positional struct {
+		ID string `positional-arg-name:"job-ID" required:"yes"`
+	} `positional-args:"yes"`
+}
+
 type clientMixin struct {
 	Address string `long:"address" description:"server address"`
 }
@@ -47,6 +55,7 @@ type options struct {
 	CmdStart  cmdStart  `command:"start"`
 	CmdStop   cmdStop   `command:"stop"`
 	CmdStatus cmdStatus `command:"status"`
+	CmdOutput cmdOutput `command:"output"`
 }
 
 func main() {
@@ -130,5 +139,31 @@ func (c *cmdStatus) Execute(args []string) error {
 		return fmt.Errorf("cannot query job status: %w", err)
 	}
 	fmt.Printf("job status: %+v\n", res)
+	return nil
+}
+
+func (c *cmdOutput) Execute(args []string) error {
+	jobID := c.Positional.ID
+
+	conn, jm, err := c.client()
+	if err != nil {
+		return fmt.Errorf("cannot connect: %w", err)
+	}
+	defer conn.Close()
+	jr := pb.JobRequest{
+		ID: jobID,
+	}
+	out, err := jm.Output(context.Background(), &jr)
+	if err != nil {
+		return fmt.Errorf("cannot obtain job output: %v", err)
+	}
+	for {
+		chunk, err := out.Recv()
+		if err != nil {
+			return fmt.Errorf("cannot receive log chunk: %v", err)
+		}
+		fmt.Println(chunk.Chunk)
+	}
+
 	return nil
 }
