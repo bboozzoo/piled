@@ -1,13 +1,13 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/url"
 	"os"
 
 	pb "github.com/bboozzoo/piled/pile/proto"
+	"github.com/bboozzoo/piled/pile/server"
 	"github.com/bboozzoo/piled/utils"
 
 	"github.com/jessevdk/go-flags"
@@ -19,36 +19,6 @@ type options struct {
 	Positional struct {
 		Address string `required:"yes" positional-arg-name:"ADDRESS" description:"listen address"`
 	} `positional-args:"yes"`
-}
-
-type piled struct {
-	pb.UnimplementedJobPileManagerServer
-}
-
-var errNotImplemented = fmt.Errorf("not implemented")
-
-// Start a job and return the result which contains the job ID.
-func (p *piled) Start(_ context.Context, req *pb.JobStartRequest) (*pb.JobStartResult, error) {
-	logrus.Tracef("start %+v", req)
-	return nil, errNotImplemented
-}
-
-// Stop a given job.
-func (p *piled) Stop(_ context.Context, req *pb.JobRequest) (*pb.StopResult, error) {
-	logrus.Tracef("stop %+v", req)
-	return nil, errNotImplemented
-}
-
-// Status obtains the status of a given job.
-func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult, error) {
-	logrus.Tracef("status %+v", req)
-	return nil, errNotImplemented
-}
-
-// Output obtains the output of a given job.
-func (p *piled) Output(req *pb.JobRequest, _ pb.JobPileManager_OutputServer) error {
-	logrus.Tracef("output %+v", req)
-	return errNotImplemented
 }
 
 func run(opt *options) error {
@@ -65,8 +35,7 @@ func run(opt *options) error {
 	}
 
 	gsrv := grpc.NewServer()
-	piled := &piled{}
-	pb.RegisterJobPileManagerServer(gsrv, piled)
+	pb.RegisterJobPileManagerServer(gsrv, server.New())
 	if err := gsrv.Serve(l); err != nil {
 		return fmt.Errorf("cannot serve grpc: %v", err)
 	}
