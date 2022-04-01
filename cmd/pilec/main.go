@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
+	"io/ioutil"
 	"os"
 
 	pb "github.com/bboozzoo/piled/pile/proto"
 	"github.com/bboozzoo/piled/utils"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/credentials"
 )
 
 type cmdStart struct {
@@ -49,6 +53,9 @@ type cmdOutput struct {
 
 type clientMixin struct {
 	Address string `long:"address" description:"server address"`
+	Cert    string `long:"cert" description:"client certificate"`
+	Key     string `long:"key" description:"client key"`
+	CACert  string `long:"CA"`
 }
 
 type options struct {
@@ -59,6 +66,7 @@ type options struct {
 }
 
 func main() {
+	logrus.SetLevel(logrus.TraceLevel)
 	_, err := flags.ParseArgs(&options{}, os.Args[1:])
 	if err != nil {
 		if utils.IsErrHelp(err) {
@@ -69,8 +77,53 @@ func main() {
 }
 
 func (c *clientMixin) client() (conn *grpc.ClientConn, client pb.JobPileManagerClient, err error) {
+	cert, err := tls.LoadX509KeyPair(c.Cert, c.Key)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot load server certificate: %v", err)
+	}
+
+	caCertBytes, err := ioutil.ReadFile(c.CACert)
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot read CA certificate: %v", err)
+	}
+	// very unlikely for the server cert of this demo to be signed by any
+	// CAs from the system pool, but let's use it anyway
+	pool, err := x509.SystemCertPool()
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot load system certificates pool: %v", err)
+	}
+	if !pool.AppendCertsFromPEM(caCertBytes) {
+		return nil, nil, fmt.Errorf("cannot add CA certificate")
+	}
+	creds := credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+		// do our own verification instead
+		InsecureSkipVerify: true,
+		VerifyConnection: func(cs tls.ConnectionState) error {
+			opts := x509.VerifyOptions{
+				// ignore DNS name
+				Intermediates: pool,
+				Roots:         pool,
+			}
+			// TODO support intermediate certs
+			serverCert := cs.PeerCertificates[0]
+			logrus.Tracef("server: %v", serverCert.Subject)
+			_, err := cs.PeerCertificates[0].Verify(opts)
+			if err != nil {
+				logrus.Tracef("verify err: %v", err)
+				return err
+			}
+			// a trivial auth check
+			isPilec := serverCert.Subject.CommonName == "piled"
+			if !isPilec {
+				return fmt.Errorf("expected a certificate of piled not %q", serverCert.Subject)
+			}
+			return nil
+		},
+	})
 	conn, err = grpc.Dial(c.Address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()))
+		grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return nil, nil, fmt.Errorf("cannot connect: %w", err)
 	}
