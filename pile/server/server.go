@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	pb "github.com/bboozzoo/piled/pile/proto"
 	"github.com/bboozzoo/piled/runner"
 	"github.com/bboozzoo/piled/utils"
-
-	"github.com/sirupsen/logrus"
 )
 
 type options struct {

@@ -8,13 +8,13 @@ import (
 	"io/ioutil"
 	"os"
 
-	pb "github.com/bboozzoo/piled/pile/proto"
-	"github.com/bboozzoo/piled/utils"
-
 	"github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
+
+	pb "github.com/bboozzoo/piled/pile/proto"
+	"github.com/bboozzoo/piled/utils"
 )
 
 type cmdStart struct {
