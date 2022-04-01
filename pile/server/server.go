@@ -58,11 +58,21 @@ func (p *piled) Stop(_ context.Context, req *pb.JobRequest) (*pb.StopResult, err
 	if err := runner.StopJob(req.ID); err != nil {
 		return nil, fmt.Errorf("cannot stop job: %v", err)
 	}
+	// the unit existed, and if it was successful it would have been removed
 	status, err := runner.JobStatus(req.ID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain job status: %v", err)
 	}
-	return &pb.StopResult{Status: int32(status.ExitStatus)}, nil
+	exitStatus := int32(0)
+	if status.Present {
+		// failed jobs are kept around
+		exitStatus = int32(status.ExitStatus)
+		if err := runner.Reset(req.ID); err != nil {
+			return nil, fmt.Errorf("cannot reset a failed job")
+		}
+	}
+	// TODO clean job logs
+	return &pb.StopResult{ExitStatus: exitStatus}, nil
 }
 
 // Status obtains the status of a given job.
@@ -75,8 +85,12 @@ func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult,
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain job status: %v", err)
 	}
-	logrus.Tracef("status: %+v", status)
-	return &pb.StatusResult{}, nil
+	sr := &pb.StatusResult{Active: status.Active}
+	if !status.Active {
+		sr.ExitStatus = int32(status.ExitStatus)
+	}
+	logrus.Tracef("status: %+v", sr)
+	return sr, nil
 }
 
 // Output obtains the output of a given job.q
