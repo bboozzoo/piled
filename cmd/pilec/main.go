@@ -217,6 +217,5 @@ func (c *cmdOutput) Execute(args []string) error {
 		}
 		fmt.Println(chunk.Chunk)
 	}
-
 	return nil
 }
