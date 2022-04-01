@@ -24,19 +24,23 @@ func StartJob(name string, config Config) error {
 		return fmt.Errorf("cannot start job without a command")
 	}
 
+	// TODO set resources
 	args := []string{
 		"--no-block",
 		"--unit", name + ".service",
+		// keep the unit around until stopped
+		"--property", "RemainAfterExit=yes",
+		// resource accounting
 		"--property", "CPUAccounting=yes",
 		"--property", "MemoryAccounting=yes",
 		"--property", "IOAccounting=yes",
+		// isolation
 		"--property", "PrivateMounts=yes",
 		"--property", "PrivateNetwork=yes",
 		"--",
 		"unshare", "--cgroup",
 		"--",
 	}
-	// TODO set resources
 	args = append(args, config.Command...)
 	// TODO use context
 	logrus.Tracef("executing: systemctl %v", args)
@@ -52,6 +56,7 @@ func StopJob(name string) error {
 	if _, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cannot execute stop command: %v", err)
 	}
+	// TODO execute clean when the unit failed
 	return nil
 }
 
@@ -87,7 +92,7 @@ func showToDict(out []byte) (props map[string]string, err error) {
 func JobStatus(name string) (*Status, error) {
 	cmd := exec.Command("systemctl",
 		"show",
-		"--property", "ActiveState,ExecMainStatus",
+		"--property", "ActiveState,ExecMainStatus,LoadState,SubState",
 		name+".service")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -99,7 +104,7 @@ func JobStatus(name string) (*Status, error) {
 	}
 
 	status := Status{}
-	if props["ActiveState"] == "active" {
+	if props["SubState"] == "running" {
 		status.Active = true
 	}
 	if props["LoadState"] == "loaded" {
@@ -113,6 +118,14 @@ func JobStatus(name string) (*Status, error) {
 		status.ExitStatus = numStatus
 	}
 	return &status, nil
+}
+
+func Reset(name string) error {
+	cmd := exec.Command("systemctl", "reset-failed", name+".service")
+	if _, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("cannot reset: %v", err)
+	}
+	return nil
 }
 
 type journalPipe struct {
