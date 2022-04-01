@@ -26,7 +26,7 @@ server-req.pem: server-key.pem
 	openssl req -new \
 		-key server-key.pem \
 		-out server-req.pem \
-		-subj "/O=pile/CN=piled server"
+		-subj "/O=pile/CN=piled"
 
 client-cert.pem: ca-cert.pem ca-key.pem client-req.pem
 	openssl x509 -req \
@@ -42,7 +42,7 @@ client-req.pem: client-key.pem
 	openssl req -new \
 		-key client-key.pem \
 		-out client-req.pem \
-		-subj "/O=pile/CN=piled client"
+		-subj "/O=pile/CN=pilec"
 
 clean: 
 	rm -f *.pem *.srl
