@@ -30,6 +30,10 @@ func StartJob(name string, config Config) error {
 		"--property", "CPUAccounting=yes",
 		"--property", "MemoryAccounting=yes",
 		"--property", "IOAccounting=yes",
+		"--property", "PrivateMounts=yes",
+		"--property", "PrivateNetwork=yes",
+		"--",
+		"unshare", "--cgroup",
 		"--",
 	}
 	// TODO set resources
