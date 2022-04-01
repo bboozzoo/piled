@@ -94,6 +94,9 @@ func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult,
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain job status: %v", err)
 	}
+	if !status.Present {
+		return nil, fmt.Errorf("cannot obtain a status of nonexistent job")
+	}
 	sr := &pb.StatusResult{Active: status.Active}
 	if !status.Active {
 		sr.ExitStatus = int32(status.ExitStatus)
