@@ -18,7 +18,6 @@ import (
 )
 
 type cmdStart struct {
-	clientMixin
 	MemoryMax uint64 `long:"memory-max" description:"Max memory for this job"`
 	CPUWeight uint   `long:"cpu-weight" description:"CPU weight of this job"`
 	IOWeight  uint   `long:"io-weight" description:"IO weight of this job"`
@@ -29,23 +28,18 @@ type cmdStart struct {
 }
 
 type cmdStop struct {
-	clientMixin
 	Positional struct {
 		ID string `positional-arg-name:"job-ID" required:"yes"`
 	} `positional-args:"yes"`
 }
 
 type cmdStatus struct {
-	clientMixin
-
 	Positional struct {
 		ID string `positional-arg-name:"job-ID" required:"yes"`
 	} `positional-args:"yes"`
 }
 
 type cmdOutput struct {
-	clientMixin
-
 	Positional struct {
 		ID string `positional-arg-name:"job-ID" required:"yes"`
 	} `positional-args:"yes"`
@@ -59,15 +53,21 @@ type clientMixin struct {
 }
 
 type options struct {
+	clientMixin
+
 	CmdStart  cmdStart  `command:"start"`
 	CmdStop   cmdStop   `command:"stop"`
 	CmdStatus cmdStatus `command:"status"`
 	CmdOutput cmdOutput `command:"output"`
 }
 
+var (
+	opts options
+)
+
 func main() {
 	logrus.SetLevel(logrus.TraceLevel)
-	_, err := flags.ParseArgs(&options{}, os.Args[1:])
+	_, err := flags.ParseArgs(&opts, os.Args[1:])
 	if err != nil {
 		if utils.IsErrHelp(err) {
 			os.Exit(0)
@@ -132,7 +132,7 @@ func (c *clientMixin) client() (conn *grpc.ClientConn, client pb.JobPileManagerC
 
 func (c *cmdStart) Execute(args []string) error {
 	fmt.Printf("start: %+v\n", c)
-	conn, jm, err := c.client()
+	conn, jm, err := opts.client()
 	if err != nil {
 		return fmt.Errorf("cannot connect: %w", err)
 	}
@@ -157,7 +157,7 @@ func (c *cmdStop) Execute(args []string) error {
 	// TODO verify that job ID looks sane
 	jobID := c.Positional.ID
 
-	conn, jm, err := c.client()
+	conn, jm, err := opts.client()
 	if err != nil {
 		return fmt.Errorf("cannot connect: %w", err)
 	}
@@ -179,7 +179,7 @@ func (c *cmdStop) Execute(args []string) error {
 func (c *cmdStatus) Execute(args []string) error {
 	jobID := c.Positional.ID
 
-	conn, jm, err := c.client()
+	conn, jm, err := opts.client()
 	if err != nil {
 		return fmt.Errorf("cannot connect: %w", err)
 	}
@@ -198,7 +198,7 @@ func (c *cmdStatus) Execute(args []string) error {
 func (c *cmdOutput) Execute(args []string) error {
 	jobID := c.Positional.ID
 
-	conn, jm, err := c.client()
+	conn, jm, err := opts.client()
 	if err != nil {
 		return fmt.Errorf("cannot connect: %w", err)
 	}
