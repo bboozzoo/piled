@@ -13,13 +13,19 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+type systemdRunner struct{}
+
+func NewSystemdRunner() *systemdRunner {
+	return &systemdRunner{}
+}
+
 type Config struct {
 	Command []string
 	CPU     string
 	IO      string
 }
 
-func StartJob(name string, config Config) error {
+func (r *systemdRunner) StartJob(name string, config Config) error {
 	if len(config.Command) == 0 {
 		return fmt.Errorf("cannot start job without a command")
 	}
@@ -51,7 +57,7 @@ func StartJob(name string, config Config) error {
 	return nil
 }
 
-func StopJob(name string) error {
+func (r *systemdRunner) StopJob(name string) error {
 	cmd := exec.Command("systemctl", "stop", name+".service")
 	if _, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cannot execute stop command: %v", err)
@@ -89,7 +95,7 @@ func showToDict(out []byte) (props map[string]string, err error) {
 	return props, nil
 }
 
-func JobStatus(name string) (*Status, error) {
+func (r *systemdRunner) JobStatus(name string) (*Status, error) {
 	cmd := exec.Command("systemctl",
 		"show",
 		"--property", "ActiveState,ExecMainStatus,LoadState,SubState",
@@ -120,7 +126,7 @@ func JobStatus(name string) (*Status, error) {
 	return &status, nil
 }
 
-func Reset(name string) error {
+func (r *systemdRunner) Reset(name string) error {
 	cmd := exec.Command("systemctl", "reset-failed", name+".service")
 	if _, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("cannot reset: %v", err)
@@ -206,7 +212,7 @@ func (j *journalPipe) Process() {
 	<-j.childWait
 }
 
-func JobOutput(name string) (output chan []byte, cancel func(), err error) {
+func (r *systemdRunner) JobOutput(name string) (output chan []byte, cancel func(), err error) {
 	// TODO check if unit even exists
 	unitName := name + ".service"
 	cmd := exec.Command("journalctl",

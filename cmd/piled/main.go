@@ -16,6 +16,7 @@ import (
 
 	pb "github.com/bboozzoo/piled/pile/proto"
 	"github.com/bboozzoo/piled/pile/server"
+	"github.com/bboozzoo/piled/runner"
 	"github.com/bboozzoo/piled/utils"
 )
 
@@ -85,7 +86,8 @@ func run(opt *options) error {
 		},
 	})
 	gsrv := grpc.NewServer(grpc.Creds(creds))
-	pb.RegisterJobPileManagerServer(gsrv, server.New())
+	srv := server.NewWithRunner(runner.NewSystemdRunner())
+	pb.RegisterJobPileManagerServer(gsrv, srv)
 
 	l, err := net.Listen(u.Scheme, ":"+u.Port())
 	if err != nil {
