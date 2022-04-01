@@ -172,7 +172,7 @@ func (c *cmdStop) Execute(args []string) error {
 	if res.Error != "" {
 		return fmt.Errorf("cannot stop job: %v", res.Error)
 	}
-	fmt.Printf("job %q stopped, status %v\n", jobID, res.Status)
+	fmt.Printf("job %q stopped, status %v\n", jobID, res.ExitStatus)
 	return nil
 }
 
