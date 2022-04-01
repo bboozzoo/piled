@@ -20,6 +20,15 @@ type options struct {
 
 type piled struct {
 	pb.UnimplementedJobPileManagerServer
+	runner Runner
+}
+
+type Runner interface {
+	StartJob(name string, config runner.Config) error
+	StopJob(name string) error
+	JobStatus(name string) (*runner.Status, error)
+	Reset(name string) error
+	JobOutput(name string) (output chan []byte, cancel func(), err error)
 }
 
 var errNotImplemented = fmt.Errorf("not implemented")
@@ -33,7 +42,7 @@ func (p *piled) Start(_ context.Context, req *pb.JobStartRequest) (*pb.JobStartR
 	}
 	// TODO verify whether command is well formed
 	jobID := "pile." + uuid
-	err = runner.StartJob("pile."+uuid, runner.Config{
+	err = p.runner.StartJob("pile."+uuid, runner.Config{
 		Command: req.Command,
 	})
 	if err != nil {
@@ -55,11 +64,11 @@ func (p *piled) Stop(_ context.Context, req *pb.JobRequest) (*pb.StopResult, err
 	if !validJobID(req.ID) {
 		return nil, fmt.Errorf("cannot stop job with invalid id %q", req.ID)
 	}
-	if err := runner.StopJob(req.ID); err != nil {
+	if err := p.runner.StopJob(req.ID); err != nil {
 		return nil, fmt.Errorf("cannot stop job: %v", err)
 	}
 	// the unit existed, and if it was successful it would have been removed
-	status, err := runner.JobStatus(req.ID)
+	status, err := p.runner.JobStatus(req.ID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain job status: %v", err)
 	}
@@ -67,7 +76,7 @@ func (p *piled) Stop(_ context.Context, req *pb.JobRequest) (*pb.StopResult, err
 	if status.Present {
 		// failed jobs are kept around
 		exitStatus = int32(status.ExitStatus)
-		if err := runner.Reset(req.ID); err != nil {
+		if err := p.runner.Reset(req.ID); err != nil {
 			return nil, fmt.Errorf("cannot reset a failed job")
 		}
 	}
@@ -81,7 +90,7 @@ func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult,
 	if !validJobID(req.ID) {
 		return nil, fmt.Errorf("cannot stop job with invalid id %q", req.ID)
 	}
-	status, err := runner.JobStatus(req.ID)
+	status, err := p.runner.JobStatus(req.ID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot obtain job status: %v", err)
 	}
@@ -99,7 +108,7 @@ func (p *piled) Output(req *pb.JobRequest, out pb.JobPileManager_OutputServer) e
 	if !validJobID(req.ID) {
 		return fmt.Errorf("cannot stop job with invalid id %q", req.ID)
 	}
-	logs, cancel, err := runner.JobOutput(req.ID)
+	logs, cancel, err := p.runner.JobOutput(req.ID)
 	if err != nil {
 		return fmt.Errorf("cannot start collecting job output: %v", err)
 	}
@@ -126,6 +135,8 @@ Loop:
 	return nil
 }
 
-func New() pb.JobPileManagerServer {
-	return &piled{}
+func NewWithRunner(runner Runner) pb.JobPileManagerServer {
+	return &piled{
+		runner: runner,
+	}
 }
