@@ -123,7 +123,7 @@ type JobStartRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Authorization token
+	// Token carrying authorization data
 	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	// Command with its arguments.
 	Command   []string   `protobuf:"bytes,2,rep,name=command,proto3" json:"command,omitempty"`
@@ -294,7 +294,7 @@ type JobRequest struct {
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
 
-	// Authorization token
+	// Token carrying authorization data
 	Token string `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`
 	// ID of the job, as obtained when starting.
 	ID string `protobuf:"bytes,2,opt,name=ID,proto3" json:"ID,omitempty"`

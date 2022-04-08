@@ -43,7 +43,7 @@ message Resources {
 
 // JobStartRequest carries the command to run.
 message JobStartRequest {
-  // Authorization token
+  // Token carrying authorization data
   string token = 1;
   // Command with its arguments.
   repeated string command = 2;
@@ -64,7 +64,7 @@ message OutputChunk {
 
 // JobRequest identifies the subject of the request.
 message JobRequest {
-  // Authorization token
+  // Token carrying authorization data
   string token = 1;
   // ID of the job, as obtained when starting.
   string ID = 2;
