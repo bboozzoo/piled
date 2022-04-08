@@ -29,16 +29,25 @@
 syntax = "proto3";
 option go_package = "github.com/bboozzoo/piled/pile/proto";
 
+// Resources assigned to a job. Keep it simple, each resource is described is a
+// string in a format that is applicable to a given cgroup controller knob. See
+// https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html
 message Resources {
-  uint32 CPUWeight = 1;
-  uint32 IOWeight = 2;
-  uint64 MemoryMax = 3;
+  // Max CPU, format as for cpu.max
+  string CPUMax = 1;
+  // Max IO, format as for io.max
+  string IOMax = 2;
+  // Max memory, format as for memory.max
+  string MemoryMax = 3;
 }
+
 // JobStartRequest carries the command to run.
 message JobStartRequest {
+  // Authorization token
+  string token = 1;
   // Command with its arguments.
-  repeated string command = 1;
-  Resources resources = 2;
+  repeated string command = 2;
+  Resources resources = 3;
 }
 
 // JobStartResults carries the result.
@@ -55,8 +64,10 @@ message OutputChunk {
 
 // JobRequest identifies the subject of the request.
 message JobRequest {
+  // Authorization token
+  string token = 1;
   // ID of the job, as obtained when starting.
-  string ID = 1;
+  string ID = 2;
 }
 
 message StopResult {
