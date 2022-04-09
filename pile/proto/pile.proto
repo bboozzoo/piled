@@ -59,7 +59,7 @@ message JobStartResult {
 }
 
 message OutputChunk {
-  string chunk = 1;
+  bytes chunk = 1;
 }
 
 // JobRequest identifies the subject of the request.
@@ -79,9 +79,13 @@ message StopResult {
 
 message StatusResult {
   string error = 1;
-  bool active = 2;
+  // One of active|exited|failed|oom-killed
+  string status = 2;
+  // Will be 0 if the process completed successfully, or some other value which
+  // can be decoded with WIFEXITED(), WIFSIGNALED() etc.
   int32 exit_status = 3;
-  uint32 processes = 4;
+  // Number of processes in the job
+  uint32 process_count = 4;
 }
 
 // JobPileManager is a service which can run and manage pile of jobs on the
