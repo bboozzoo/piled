@@ -1,21 +1,18 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"syscall"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
+	"github.com/bboozzoo/piled/cgroup"
 	"github.com/bboozzoo/piled/utils"
 )
 
@@ -33,66 +30,6 @@ type options struct {
 
 const sysFsCgroup = "/sys/fs/cgroup"
 
-func moveToCgroup(cg string) error {
-	logrus.Tracef("moving to cgroup %v", cg)
-	pid := os.Getpid()
-	return setCgroupKnob(cg, "cgroup.procs", fmt.Sprintf("%v", pid))
-}
-
-func setCgroupKnob(cg, knob, value string) error {
-	p := filepath.Join(cg, knob)
-	logrus.Tracef("setting %v to: %q", p, value)
-	f, err := os.OpenFile(p, os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("cannot open cgroups file: %v", err)
-	}
-	defer f.Close()
-	if _, err := fmt.Fprintf(f, "%v\n", value); err != nil {
-		return fmt.Errorf("cannot set cgroup %v to %v: %v", knob, value, err)
-	}
-	return nil
-}
-
-var keyNotFoundError = fmt.Errorf("key not found")
-
-func getCgKVEntry(cg, knob, key string) (string, error) {
-	p := filepath.Join(cg, knob)
-	logrus.Tracef("find %v value of key  %q", p, key)
-	f, err := os.Open(p)
-	if err != nil {
-		return "", fmt.Errorf("cannot open cgroups file: %v", err)
-	}
-	defer f.Close()
-	inf := bufio.NewScanner(f)
-	for inf.Scan() {
-		l := inf.Text()
-		fields := strings.Fields(l)
-		if len(fields) != 2 {
-			return "", fmt.Errorf("cannot process line %q", l)
-		}
-		if fields[0] == key {
-			return fields[1], nil
-		}
-	}
-	if err := inf.Err(); err != nil {
-		return "", fmt.Errorf("cannot read contents of %v: %v", p, err)
-	}
-	return "", keyNotFoundError
-}
-
-func cgCurrent() (string, error) {
-	cgNowRaw, err := ioutil.ReadFile("/proc/self/cgroup")
-	if err != nil {
-		return "", err
-	}
-	split := bytes.SplitN(bytes.TrimSpace(cgNowRaw), []byte("::"), 2)
-	if len(split) != 2 {
-		return "", fmt.Errorf("invalid cgroup content: %v", string(cgNowRaw))
-	}
-	cgNow := filepath.Join(sysFsCgroup, string(split[1]))
-	return cgNow, nil
-}
-
 func run(opts *options, osArgs1 []string) error {
 	// TODO: what if this goes over argv length?
 	args := []string{
@@ -101,17 +38,12 @@ func run(opts *options, osArgs1 []string) error {
 
 	if opts.CgRoot == "" {
 		var err error
-		opts.CgRoot, err = cgCurrent()
+		opts.CgRoot, err = cgroup.Current()
 		if err != nil {
 			return fmt.Errorf("cannot read current cg: %v", err)
 		}
 		args = append(args, "--cg-root", opts.CgRoot)
 		logrus.Tracef("new cg root: %v", opts.CgRoot)
-	}
-
-	cg := filepath.Join(opts.CgRoot, opts.Name)
-	if err := os.MkdirAll(cg, 0755); err != nil {
-		return fmt.Errorf("cannot create cgroup dir: %v", err)
 	}
 
 	// an invariant of cgroup v2 is that only leaf groups are occupied,
@@ -122,14 +54,17 @@ func run(opts *options, osArgs1 []string) error {
 	//
 	// should the 'group' group be occupied, trying to enable subtree
 	// controllers will fail with either EBUSY or ENOTSUPP
+	cgJob := filepath.Join(opts.CgRoot, opts.Name)
 	cgRunner := filepath.Join(opts.CgRoot, "runner")
-	if err := os.MkdirAll(cgRunner, 0755); err != nil {
+	if err := cgroup.Add(cgJob); err != nil {
+		return fmt.Errorf("cannot create cgroup dir: %v", err)
+	}
+	if err := cgroup.Add(cgRunner); err != nil {
 		return fmt.Errorf("cannot create runner cgroup: %v", err)
 	}
-	if err := moveToCgroup(cgRunner); err != nil {
+	if err := cgroup.MovePidTo(os.Getpid(), cgRunner); err != nil {
 		return fmt.Errorf("cannot move to runner cgroup: %v", err)
 	}
-	cgJob := filepath.Join(opts.CgRoot, opts.Name)
 
 	args = append(args, osArgs1...)
 	logrus.Tracef("running: %q", args)
@@ -151,7 +86,7 @@ func run(opts *options, osArgs1 []string) error {
 		ws := eErr.Sys().(syscall.WaitStatus)
 		logrus.Tracef("exit status: %v (%v)", ws, ws.Signal())
 		if ws.Signal() == unix.SIGKILL {
-			gk, err := getCgKVEntry(cgJob, "memory.events.local", "oom_group_kill")
+			gk, err := cgroup.ReadKVProperty(cgJob, "memory.events.local", "oom_group_kill")
 			if err != nil {
 				return fmt.Errorf("cannot process memory.events.local: %v", err)
 			}
@@ -195,40 +130,40 @@ func runInNamespace(opts *options) error {
 	// this ought to print 1
 	logrus.Tracef("pid: %v", os.Getpid())
 
-	cgNow, err := cgCurrent()
+	cgNow, err := cgroup.Current()
 	if err != nil {
 		return fmt.Errorf("cannot read current cg: %v", err)
 	}
 	logrus.Tracef("current cg: %v", cgNow)
 
-	if err := moveToCgroup(cg); err != nil {
+	if err := cgroup.MovePidTo(os.Getpid(), cg); err != nil {
 		return fmt.Errorf("cannot move to cgroup %v: %v", cg, err)
 	}
 
 	if opts.IO != "" {
-		if err := setCgroupKnob(cgRoot, "cgroup.subtree_control", "+io"); err != nil {
+		if err := cgroup.WriteProperty(cgRoot, "cgroup.subtree_control", "+io"); err != nil {
 			return fmt.Errorf("cannot enable io controller in %v: %v", cgRoot, err)
 		}
-		if err := setCgroupKnob(cg, "io.max", opts.IO); err != nil {
+		if err := cgroup.WriteProperty(cg, "io.max", opts.IO); err != nil {
 			return fmt.Errorf("cannot set IO pressure: %v", err)
 		}
 	}
 	if opts.CPU != "" {
-		if err := setCgroupKnob(cgRoot, "cgroup.subtree_control", "+cpu"); err != nil {
+		if err := cgroup.WriteProperty(cgRoot, "cgroup.subtree_control", "+cpu"); err != nil {
 			return fmt.Errorf("cannot enable io controller in %v: %v", cgRoot, err)
 		}
-		if err := setCgroupKnob(cg, "cpu.max", opts.CPU); err != nil {
+		if err := cgroup.WriteProperty(cg, "cpu.max", opts.CPU); err != nil {
 			return fmt.Errorf("cannot set CPU pressure: %v", err)
 		}
 	}
 	if opts.Memory != "" {
-		if err := setCgroupKnob(cgRoot, "cgroup.subtree_control", "+memory"); err != nil {
+		if err := cgroup.WriteProperty(cgRoot, "cgroup.subtree_control", "+memory"); err != nil {
 			return fmt.Errorf("cannot enable io controller in %v: %v", cgRoot, err)
 		}
-		if err := setCgroupKnob(cg, "memory.max", opts.Memory); err != nil {
+		if err := cgroup.WriteProperty(cg, "memory.max", opts.Memory); err != nil {
 			return fmt.Errorf("cannot set CPU pressure: %v", err)
 		}
-		if err := setCgroupKnob(cg, "memory.oom.group", "1"); err != nil {
+		if err := cgroup.WriteProperty(cg, "memory.oom.group", "1"); err != nil {
 			return fmt.Errorf("cannot enable OOM group kill: %v", err)
 		}
 	}
