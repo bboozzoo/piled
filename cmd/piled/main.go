@@ -86,7 +86,11 @@ func run(opt *options) error {
 		},
 	})
 	gsrv := grpc.NewServer(grpc.Creds(creds))
-	srv := server.NewWithRunner(runner.NewSystemdRunner())
+	r, err := runner.NewCgroupRunner()
+	if err != nil {
+		return fmt.Errorf("cannot create runner: %v", err)
+	}
+	srv := server.NewWithRunner(r)
 	pb.RegisterJobPileManagerServer(gsrv, srv)
 
 	l, err := net.Listen(u.Scheme, ":"+u.Port())
