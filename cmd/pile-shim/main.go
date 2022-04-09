@@ -246,6 +246,7 @@ func runInNamespace(opts *options) error {
 func main() {
 	var opts options
 	logrus.SetLevel(logrus.TraceLevel)
+	logrus.SetFormatter(&utils.WithPidFormatter{})
 	_, err := flags.ParseArgs(&opts, os.Args[1:])
 	if err != nil {
 		if utils.IsErrHelp(err) {
