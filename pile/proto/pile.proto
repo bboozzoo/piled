@@ -70,22 +70,24 @@ message JobRequest {
   string ID = 2;
 }
 
+// Status of the job
+message Status {
+  // One of active|exited|failed|oom-killed
+  string status = 1;
+  // Numerical exit code, only meaningful if status is != "active"
+  int32 exit_status = 2;
+}
+
 message StopResult {
   // Error is non empty when the request failed.
   string error = 1;
-  // Status of the job, as in its return value.
-  int32 exit_status = 2;
+  // Status of the job
+  Status status = 2;
 }
 
 message StatusResult {
   string error = 1;
-  // One of active|exited|failed|oom-killed
-  string status = 2;
-  // Will be 0 if the process completed successfully, or some other value which
-  // can be decoded with WIFEXITED(), WIFSIGNALED() etc.
-  int32 exit_status = 3;
-  // Number of processes in the job
-  uint32 process_count = 4;
+  Status status = 2;
 }
 
 // JobPileManager is a service which can run and manage pile of jobs on the
