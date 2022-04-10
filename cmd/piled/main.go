@@ -105,6 +105,9 @@ func run(opt *options) error {
 
 func main() {
 	logrus.SetLevel(logrus.TraceLevel)
+	if runner.IsShimEntry() {
+		shimEntry()
+	}
 	opt := &options{}
 	_, err := flags.ParseArgs(opt, os.Args[1:])
 	if err != nil {
@@ -117,4 +120,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+}
+
+func shimEntry() {
+	err := runner.ShimEntry()
+	fmt.Fprintf(os.Stderr, "cannot execute shim: %v\n", err)
+	os.Exit(42)
 }
