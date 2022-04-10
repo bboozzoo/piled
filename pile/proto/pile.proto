@@ -78,6 +78,7 @@ message Status {
   // exited - job finished successfully
   // failed - job finished with non-0 status
   // oom-killed - job was killed by OOM
+  // TODO consider using an enum if maximum wire efficiency is needed
   string status = 1;
   // Numerical exit code, only meaningful if status is != "active"
   int32 exit_status = 2;
