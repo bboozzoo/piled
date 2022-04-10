@@ -20,9 +20,10 @@ func NewSystemdRunner() *systemdRunner {
 }
 
 type Config struct {
-	Command []string
-	CPU     string
-	IO      string
+	Command   []string
+	CPUMax    string
+	IOMax     string
+	MemoryMax string
 }
 
 func (r *systemdRunner) StartJob(name string, config Config) error {
