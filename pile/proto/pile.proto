@@ -72,7 +72,12 @@ message JobRequest {
 
 // Status of the job
 message Status {
-  // One of active|exited|failed|oom-killed
+  // One of active|exited|failed|oom-killed,
+  // which have the following meaning:
+  // active - job is active
+  // exited - job finished successfully
+  // failed - job finished with non-0 status
+  // oom-killed - job was killed by OOM
   string status = 1;
   // Numerical exit code, only meaningful if status is != "active"
   int32 exit_status = 2;
@@ -86,7 +91,9 @@ message StopResult {
 }
 
 message StatusResult {
+  // Error is non empty when the request failed.
   string error = 1;
+  // Status of the job
   Status status = 2;
 }
 
