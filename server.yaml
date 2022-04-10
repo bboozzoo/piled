@@ -1,0 +1,10 @@
+# server's certificate and key, can be an absolute path or relative wrt. this
+# config file
+cert: certs/server-cert.pem
+key: certs/server-key.pem
+
+# CA certificate that
+ca-cert: certs/ca-cert.pem
+
+# address to listen on, format accepted by URL parse, the hostname is ignored
+listen-address: tcp://localhost:9999
