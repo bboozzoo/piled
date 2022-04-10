@@ -19,8 +19,8 @@ import (
 
 type cmdStart struct {
 	MemoryMax uint64 `long:"memory-max" description:"Max memory for this job"`
-	CPUWeight uint   `long:"cpu-weight" description:"CPU weight of this job"`
-	IOWeight  uint   `long:"io-weight" description:"IO weight of this job"`
+	CPUMax    uint   `long:"cpu-max" description:"Max CPU of this job"`
+	IOMax     uint   `long:"io-max" description:"Max IO of this job"`
 
 	Positional struct {
 		Args []string `positional-arg-name:"arg" required:"1"`
