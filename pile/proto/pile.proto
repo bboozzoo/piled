@@ -82,6 +82,9 @@ message Status {
   string status = 1;
   // Numerical exit code, only meaningful if status is != "active"
   int32 exit_status = 2;
+  // Signal that terminated the job, only meaningful when status is != active
+  // and non 0
+  int32 term_signal = 3;
 }
 
 message StopResult {
