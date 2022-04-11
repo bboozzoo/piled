@@ -66,10 +66,9 @@ point from systemd.
                  \- pile-<uuid> - 12341 (job2)
                  \- pile-<uuid> - 3333 (job3)
 ```
-
+The leaf groups are prepared and their resource limits are configured by the runner.
 The processes are placed to cgroups through a shim whose job is to move the
-process to a leaf group, configure the resource limits, and lastly exec into the
-provided command.
+process to a leaf group, and exec into the provided command.
 
 ### Communication and authentication
 
