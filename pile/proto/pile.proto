@@ -52,10 +52,8 @@ message JobStartRequest {
 
 // JobStartResults carries the result.
 message JobStartResult {
-  // Error, not empty if the request failed.
-  string error = 1;
   // ID of he job, fur use with subsequent requests.
-  string ID = 2;
+  string ID = 1;
 }
 
 message OutputChunk {
@@ -88,17 +86,13 @@ message Status {
 }
 
 message StopResult {
-  // Error is non empty when the request failed.
-  string error = 1;
   // Status of the job
-  Status status = 2;
+  Status status = 1;
 }
 
 message StatusResult {
-  // Error is non empty when the request failed.
-  string error = 1;
   // Status of the job
-  Status status = 2;
+  Status status = 1;
 }
 
 // JobPileManager is a service which can run and manage pile of jobs on the
