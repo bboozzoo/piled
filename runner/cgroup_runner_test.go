@@ -3,7 +3,6 @@ package runner_test
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,71 +10,63 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
-	. "gopkg.in/check.v1"
 
 	"github.com/bboozzoo/piled/cgroup"
 	"github.com/bboozzoo/piled/runner"
 	"github.com/bboozzoo/piled/testutils"
 )
 
-var _ = Suite(&runnerSuite{})
-
-func TestT(t *testing.T) {
-	TestingT(t)
-}
-
-type runnerSuite struct {
-	testutils.BaseTest
-	cgroupRoot string
-	tmpdir     string
-}
-
-func (s *runnerSuite) SetUpTest(c *C) {
-	s.BaseTest.SetUpTest(c)
-	s.cgroupRoot = c.MkDir()
+func setUpTest(t *testing.T) (cgroupRoot, tmp string) {
+	cgroupRoot = t.TempDir()
 
 	restore := runner.MockUnixExec(func(argv0 string, argv []string, envv []string) error {
-		c.Fatalf("unixExec not mocked")
+		t.Fatalf("unixExec not mocked")
 		return fmt.Errorf("unexpected call")
 	})
-	s.AddCleanup(restore)
-	restore = cgroup.MockSysFsCgroup(s.cgroupRoot)
-	s.AddCleanup(restore)
+	t.Cleanup(restore)
+	restore = cgroup.MockSysFsCgroup(cgroupRoot)
+	t.Cleanup(restore)
 
-	s.tmpdir = c.MkDir()
+	tmp = t.TempDir()
 	oldTmp, wasSet := os.LookupEnv("TMPDIR")
-	os.Setenv("TMPDIR", s.tmpdir)
-	s.AddCleanup(func() {
+	os.Setenv("TMPDIR", tmp)
+	t.Cleanup(func() {
 		if wasSet {
 			os.Setenv("TMPDIR", oldTmp)
 		} else {
 			os.Unsetenv("TMPDIR")
 		}
 	})
-	s.AddCleanup(runner.MockCgroupIsV2(func() (bool, error) {
+	t.Cleanup(runner.MockCgroupIsV2(func() (bool, error) {
 		return true, nil
 	}))
+	return cgroupRoot, tmp
 }
 
-func (s *runnerSuite) TestIsShimEntry(c *C) {
+func TestIsShimEntry(t *testing.T) {
+	setUpTest(t)
 	is := runner.IsShimEntry()
-	c.Assert(is, Equals, false)
+	assert.False(t, is)
 
 	os.Setenv("_SHIM_IN_NAMESPACE", "1")
 	defer os.Unsetenv("_SHIM_IN_NAMESPACE")
 
 	is = runner.IsShimEntry()
-	c.Assert(is, Equals, true)
+	assert.True(t, is)
 }
 
-func (s *runnerSuite) TestShimEntryHappy(c *C) {
+func TestShimEntryHappy(t *testing.T) {
+	cgroupRoot, _ := setUpTest(t)
+
 	os.Setenv("_SHIM_IN_NAMESPACE", "1")
 	defer os.Unsetenv("_SHIM_IN_NAMESPACE")
 	os.Setenv("_SHIM_CG", "/foo/bar/baz")
 	defer os.Unsetenv("_SHIM_CG")
 
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "/foo/bar/baz/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "/foo/bar/baz/cgroup.procs"), "")
 
 	execCalls := 0
 	restore := runner.MockUnixExec(func(argv0 string, argv []string, envv []string) error {
@@ -91,37 +82,38 @@ func (s *runnerSuite) TestShimEntryHappy(c *C) {
 	})
 	defer restore()
 	restore = runner.MockUnixUnmount(func(target string, flags int) error {
-		c.Assert(mounts, DeepEquals, []string{
+		require.EqualValues(t, []string{
 			// / was already remounted
 			`/ -> / type:""`,
-		})
+		}, mounts)
 		umounts = append(umounts, target)
 		return nil
 	})
 	defer restore()
 
 	err := runner.ShimEntry()
-	c.Assert(err, IsNil)
-	c.Assert(execCalls, Equals, 1)
+	require.NoError(t, err)
+	assert.Equal(t, 1, execCalls)
 
-	c.Assert(execCalls, Equals, 1)
-	c.Assert(mounts, DeepEquals, []string{
+	assert.EqualValues(t, []string{
 		// / was already remounted
 		`/ -> / type:""`,
 		`proc -> /proc type:"proc"`,
-	})
-	c.Assert(umounts, DeepEquals, []string{
+	}, mounts)
+	assert.EqualValues(t, []string{
 		"/proc",
-	})
+	}, umounts)
 }
 
-func (s *runnerSuite) TestShimEntryExecFails(c *C) {
+func TestShimEntryExecFails(t *testing.T) {
+	cgroupRoot, _ := setUpTest(t)
+
 	os.Setenv("_SHIM_IN_NAMESPACE", "1")
 	defer os.Unsetenv("_SHIM_IN_NAMESPACE")
 	os.Setenv("_SHIM_CG", "/foo/bar/baz")
 	defer os.Unsetenv("_SHIM_CG")
 
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "/foo/bar/baz/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "/foo/bar/baz/cgroup.procs"), "")
 
 	restore := runner.MockUnixExec(func(argv0 string, argv []string, envv []string) error {
 		return fmt.Errorf("mock failure")
@@ -136,7 +128,8 @@ func (s *runnerSuite) TestShimEntryExecFails(c *C) {
 	})
 	defer restore()
 	err := runner.ShimEntry()
-	c.Assert(err, ErrorMatches, "exec failed: mock failure")
+	require.Error(t, err)
+	assert.EqualError(t, err, "exec failed: mock failure")
 }
 
 type jcTest struct {
@@ -144,8 +137,8 @@ type jcTest struct {
 	expectedStop      *runner.Status
 }
 
-func (s *runnerSuite) TestJobCycleKill(c *C) {
-	s.testJobCycle(c, jcTest{
+func TestJobCycleKill(t *testing.T) {
+	testJobCycle(t, jcTest{
 		expectedStop: &runner.Status{
 			Active:     false,
 			ExitStatus: -1,
@@ -154,8 +147,8 @@ func (s *runnerSuite) TestJobCycleKill(c *C) {
 	})
 }
 
-func (s *runnerSuite) TestJobCycleOOM(c *C) {
-	s.testJobCycle(c, jcTest{
+func TestJobCycleOOM(t *testing.T) {
+	testJobCycle(t, jcTest{
 		memoryEventsLocal: "oom_group_kill 1",
 		expectedStop: &runner.Status{
 			Active:     false,
@@ -166,32 +159,34 @@ func (s *runnerSuite) TestJobCycleOOM(c *C) {
 	})
 }
 
-func (s *runnerSuite) testJobCycle(c *C, tc jcTest) {
-	d := c.MkDir()
+func testJobCycle(t *testing.T, tc jcTest) {
+	cgroupRoot, tmpdir := setUpTest(t)
+	d := t.TempDir()
+
 	scriptPath := filepath.Join(d, "script")
 	scriptStamp := filepath.Join(d, "script.stamp")
-	testutils.MockFile(c, scriptPath, fmt.Sprintf(`#!/bin/sh
+	testutils.MockFile(t, scriptPath, fmt.Sprintf(`#!/bin/sh
 for arg in "$@"; do echo "# $arg" ; done
 touch %s
 exec sleep 3600
 `, scriptStamp))
 
-	c.Assert(os.Chmod(scriptPath, 0755), IsNil)
+	require.NoError(t, os.Chmod(scriptPath, 0755))
 
-	testutils.MockFile(c, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
+	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.subtree_control"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
 	// runner will move the process to this group
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/runner/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
 	// how the job will be killed
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/cgroup.kill"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.events.local"), tc.memoryEventsLocal)
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), tc.memoryEventsLocal)
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		c.Assert(p, Equals, filepath.Join(s.cgroupRoot, "foo/baz"))
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
 		return nil
 	})
 	defer restore()
@@ -200,51 +195,44 @@ exec sleep 3600
 
 	var hijackedCmd *exec.Cmd
 	runner.MockCmdStart(func(cmd *exec.Cmd) error {
-		c.Assert(cmd.SysProcAttr, NotNil)
+		require.NotNil(t, cmd.SysProcAttr)
 		var uPA *unix.SysProcAttr = cmd.SysProcAttr
-		c.Assert(uPA.Cloneflags, Equals, uintptr(unix.CLONE_NEWPID|unix.CLONE_NEWNET|unix.CLONE_NEWNS))
+		assert.Equal(t, uintptr(unix.CLONE_NEWPID|unix.CLONE_NEWNET|unix.CLONE_NEWNS), uPA.Cloneflags)
 		// clear the flags, as calling with them would require CAP_ADMIN
 		cmd.SysProcAttr.Cloneflags = 0
 		hijackedCmd = cmd
 		err := cmd.Start()
 		if err == nil {
-			c.Logf("pid: %v", cmd.Process.Pid)
+			t.Logf("pid: %v", cmd.Process.Pid)
 		}
 		return err
 	})
 
 	r, err := runner.NewCgroupRunner(nil)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	err = r.Start("baz", runner.Config{
 		Command: []string{"/bin/ls", "-l"},
 	})
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
 	status, err := r.Status("baz")
-	c.Logf("status %+v err %v", status, err)
-	c.Assert(err, IsNil)
-	c.Assert(status, DeepEquals, &runner.Status{
+	t.Logf("status %+v err %v", status, err)
+	require.NoError(t, err)
+	assert.Equal(t, &runner.Status{
 		Active: true,
-	})
+	}, status)
 
-	now := time.Now()
-	for {
-		_, err := ioutil.ReadFile(scriptStamp)
-		if err == nil {
-			break
-		}
-		if time.Since(now) > 5*time.Second {
-			break
-		}
-		c.Logf("waiting for stamp, since: %v", time.Since(now))
-		time.Sleep(time.Second)
-	}
+	// wait until the stamp file appears
+	require.Eventually(t, func() bool {
+		_, err := os.ReadFile(scriptStamp)
+		return err == nil
+	}, 5*time.Second, 100*time.Millisecond)
 
 	outputReaderChan := make(chan struct{}, 1)
 	outChan, cancel, err := r.Output("baz")
-	c.Assert(err, IsNil)
-	c.Assert(cancel, NotNil)
-	c.Assert(outChan, NotNil)
+	require.NoError(t, err)
+	require.NotNil(t, cancel)
+	require.NotNil(t, outChan)
 
 	buf := bytes.Buffer{}
 	go func() {
@@ -254,61 +242,61 @@ exec sleep 3600
 		close(outputReaderChan)
 	}()
 
-	// in the meantime, the job's output is already in a file
-	testutils.TextFileEquals(c,
-		filepath.Join(s.tmpdir, "cgroup-runner-output/baz"),
-		`# /bin/ls
+	expectedOutput := `# /bin/ls
 # -l
-`)
+`
+	// in the meantime, the job's output is already in a file
+	testutils.TextFileEquals(t,
+		filepath.Join(tmpdir, "cgroup-runner-output/baz"),
+		expectedOutput)
 
 	// stop will block trying to kill the process through cgroups, but since
 	// we mocked everything, we need to simulate what cgroups would do
 	stopDone := make(chan struct{}, 1)
 	go func() {
-		c.Logf("stop")
+		t.Logf("stop")
 		status, err = r.Stop("baz")
 		close(stopDone)
 
 	}()
-	c.Logf("killing")
-	c.Assert(hijackedCmd.Process, NotNil)
-	c.Assert(hijackedCmd.Process.Kill(), IsNil)
+	t.Logf("killing")
+	require.NotNil(t, hijackedCmd.Process)
+	require.NoError(t, hijackedCmd.Process.Kill())
 	<-stopDone
-	c.Logf("stop done")
-	c.Assert(err, IsNil)
-	c.Assert(status, DeepEquals, tc.expectedStop)
+	t.Logf("stop done")
+	require.NoError(t, err)
+	assert.Equal(t, tc.expectedStop, status)
 
 	<-outputReaderChan
-	c.Assert(buf.String(), Equals, `# /bin/ls
-# -l
-`)
+	assert.Equal(t, expectedOutput, buf.String())
 }
 
-func (s *runnerSuite) TestJobCycleHappy(c *C) {
-	d := c.MkDir()
+func TestJobCycleHappy(t *testing.T) {
+	cgroupRoot, _ := setUpTest(t)
+	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
 	scriptStamp := filepath.Join(d, "script.stamp")
-	testutils.MockFile(c, scriptPath, fmt.Sprintf(`#!/bin/sh
+	testutils.MockFile(t, scriptPath, fmt.Sprintf(`#!/bin/sh
 for arg in "$@"; do echo "# $arg" ; done
 touch %s
 `, scriptStamp))
 
-	c.Assert(os.Chmod(scriptPath, 0755), IsNil)
+	require.NoError(t, os.Chmod(scriptPath, 0755))
 
-	testutils.MockFile(c, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
+	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.subtree_control"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
 	// runner will move the process to this group
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/runner/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
 	// how the job will be killed
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/cgroup.kill"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.events.local"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), "")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		c.Assert(p, Equals, filepath.Join(s.cgroupRoot, "foo/baz"))
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
 		return nil
 	})
 	defer restore()
@@ -323,30 +311,21 @@ touch %s
 		return cmd.Start()
 	})
 
-	storageDir := c.MkDir()
+	storageDir := t.TempDir()
 	r, err := runner.NewCgroupRunner(&runner.RunnerConfig{
 		StorageRoot: storageDir,
 	})
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	err = r.Start("baz", runner.Config{
 		Command: []string{"/bin/ls", "-l"},
 	})
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	now := time.Now()
-	for {
+	// waitn until the process is gone
+	require.Eventually(t, func() bool {
 		err := syscall.Kill(hijackedCmd.Process.Pid, 0)
-		// TODO: this can be flaky is PIDs are reused right away, though
-		// they shouldn't
-		if err == syscall.ESRCH {
-			break
-		}
-		if time.Since(now) > 5*time.Second {
-			break
-		}
-		c.Logf("waiting for stamp, since: %v", time.Since(now))
-		time.Sleep(time.Second)
-	}
+		return err == syscall.ESRCH
+	}, 5*time.Second, 100*time.Millisecond)
 
 	expectedStatus := &runner.Status{
 		Active:     false,
@@ -355,17 +334,17 @@ touch %s
 		OOM:        false,
 	}
 	// check if the process is alive
-	c.Assert(syscall.Kill(hijackedCmd.Process.Pid, 0), Equals, syscall.ESRCH)
+	require.Equal(t, syscall.ESRCH, syscall.Kill(hijackedCmd.Process.Pid, 0))
 	status, err := r.Status("baz")
-	c.Logf("status %+v err %v", status, err)
-	c.Assert(err, IsNil)
-	c.Assert(status, DeepEquals, expectedStatus)
+	t.Logf("status %+v err %v", status, err)
+	require.NoError(t, err)
+	assert.Equal(t, expectedStatus, status)
 
 	outputReaderChan := make(chan struct{}, 1)
 	outChan, cancel, err := r.Output("baz")
-	c.Assert(err, IsNil)
-	c.Assert(cancel, NotNil)
-	c.Assert(outChan, NotNil)
+	require.NoError(t, err)
+	require.NotNil(t, cancel)
+	require.NotNil(t, outChan)
 
 	buf := bytes.Buffer{}
 	go func() {
@@ -377,50 +356,49 @@ touch %s
 
 	// reading of output will complete now, since the job is already dead
 	<-outputReaderChan
-	c.Assert(buf.String(), Equals, `# /bin/ls
+	expectedOutput := `# /bin/ls
 # -l
-`)
-	testutils.TextFileEquals(c, filepath.Join(storageDir, "baz"),
-		`# /bin/ls
-# -l
-`)
+`
+	require.Equal(t, expectedOutput, buf.String())
+	testutils.TextFileEquals(t, filepath.Join(storageDir, "baz"), expectedOutput)
 	// stop will not block on anything
-	c.Logf("stop")
+	t.Logf("stop")
 	status, err = r.Stop("baz")
-	c.Assert(err, IsNil)
-	c.Assert(status, DeepEquals, expectedStatus)
+	require.NoError(t, err)
+	assert.Equal(t, expectedStatus, status)
 
 }
 
-func (s *runnerSuite) TestJobWithResources(c *C) {
-	d := c.MkDir()
+func TestJobWithResources(t *testing.T) {
+	cgroupRoot, _ := setUpTest(t)
+	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
 	scriptStamp := filepath.Join(d, "script.stamp")
-	testutils.MockFile(c, scriptPath, fmt.Sprintf(`#!/bin/sh
+	testutils.MockFile(t, scriptPath, fmt.Sprintf(`#!/bin/sh
 for arg in "$@"; do echo "# $arg" ; done
 touch %s
 `, scriptStamp))
 
-	c.Assert(os.Chmod(scriptPath, 0755), IsNil)
+	require.NoError(t, os.Chmod(scriptPath, 0755))
 
-	testutils.MockFile(c, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
+	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/cgroup.subtree_control"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
 	// runner will move the process to this group
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/runner/cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
 	// paths for the job group
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/cgroup.kill"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.events.local"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/cpu.max"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/io.max"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.max"), "")
-	testutils.MockFile(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.oom.group"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cpu.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/io.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.oom.group"), "")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		c.Assert(p, Equals, filepath.Join(s.cgroupRoot, "foo/baz"))
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
 		return nil
 	})
 	defer restore()
@@ -433,20 +411,20 @@ touch %s
 	})
 
 	r, err := runner.NewCgroupRunner(nil)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 	err = r.Start("baz", runner.Config{
 		Command:   []string{"/bin/ls", "-l"},
 		CPUMax:    "200 1000",
 		MemoryMax: "102400",
 		IOMax:     "8:16 rbps=102400",
 	})
-	c.Assert(err, IsNil)
-	testutils.TextFileEquals(c, filepath.Join(s.cgroupRoot, "foo/baz/cpu.max"),
+	require.NoError(t, err)
+	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/cpu.max"),
 		"200 1000\n")
-	testutils.TextFileEquals(c, filepath.Join(s.cgroupRoot, "foo/baz/io.max"),
+	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/io.max"),
 		"8:16 rbps=102400\n")
-	testutils.TextFileEquals(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.max"),
+	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/memory.max"),
 		"102400\n")
-	testutils.TextFileEquals(c, filepath.Join(s.cgroupRoot, "foo/baz/memory.oom.group"),
+	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/memory.oom.group"),
 		"1\n")
 }
