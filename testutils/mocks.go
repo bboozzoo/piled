@@ -1,16 +1,16 @@
 package testutils
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/require"
 )
 
-func MockFile(c *C, path, content string) {
+func MockFile(t *testing.T, path, content string) {
 	err := os.MkdirAll(filepath.Dir(path), 0755)
-	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(path, []byte(content), 0755)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+	err = os.WriteFile(path, []byte(content), 0755)
+	require.NoError(t, err)
 }

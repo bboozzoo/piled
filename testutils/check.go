@@ -1,14 +1,16 @@
 package testutils
 
 import (
-	"io/ioutil"
+	"os"
+	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TextFileEquals(c *C, p, val string) {
+func TextFileEquals(t *testing.T, p, val string) {
 	// TODO convert to real checker
-	d, err := ioutil.ReadFile(p)
-	c.Assert(err, IsNil)
-	c.Assert(string(d), DeepEquals, val)
+	d, err := os.ReadFile(p)
+	require.NoError(t, err)
+	assert.EqualValues(t, val, string(d))
 }
