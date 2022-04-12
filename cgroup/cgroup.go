@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -80,7 +79,7 @@ var procSelfCgroup = "/proc/self/cgroup"
 
 // Current cgroup of the process.
 func Current() (string, error) {
-	cgNowRaw, err := ioutil.ReadFile(procSelfCgroup)
+	cgNowRaw, err := os.ReadFile(procSelfCgroup)
 	if err != nil {
 		return "", err
 	}
