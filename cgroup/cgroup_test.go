@@ -1,71 +1,52 @@
 package cgroup_test
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
-	. "gopkg.in/check.v1"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/bboozzoo/piled/cgroup"
-	"github.com/bboozzoo/piled/testutils"
 )
 
-func Test(t *testing.T) {
-	TestingT(t)
-}
+func TestBasics(t *testing.T) {
+	root := t.TempDir()
+	psc := filepath.Join(root, "proc-self-cgroup")
+	t.Cleanup(cgroup.MockProcSelfCgroup(psc))
+	t.Cleanup(cgroup.MockSysFsCgroup(root))
 
-var _ = Suite(&cgroupSuite{})
-
-type cgroupSuite struct {
-	testutils.BaseTest
-	root string
-}
-
-func (s *cgroupSuite) SetUpTest(c *C) {
-	s.BaseTest.SetUpTest(c)
-	s.root = c.MkDir()
-	restore := cgroup.MockSysFsCgroup(s.root)
-	s.AddCleanup(restore)
-}
-
-func (s *cgroupSuite) TestBasics(c *C) {
-	psc := filepath.Join(s.root, "proc-self-cgroup")
-	err := ioutil.WriteFile(psc, []byte("0::/a/b/c"), 0644)
-	c.Assert(err, IsNil)
-	cgroup.MockProcSelfCgroup(psc)
+	err := os.WriteFile(psc, []byte("0::/a/b/c"), 0644)
+	require.NoError(t, err)
 
 	current, err := cgroup.Current()
-	c.Assert(err, IsNil)
-	c.Assert(current, Equals, "/a/b/c")
+	require.NoError(t, err)
+	assert.Equal(t, "/a/b/c", current)
 
 	cgRunner := filepath.Join(current, "runner")
 	// precondition
-	_, err = os.Stat(filepath.Join(s.root, cgRunner))
-	c.Assert(err, ErrorMatches, ".*/a/b/c/runner: no such file or directory")
+	require.NoDirExists(t, filepath.Join(root, cgRunner))
 	// add
 	err = cgroup.Add(cgRunner)
-	c.Assert(err, IsNil)
-	st, err := os.Stat(filepath.Join(s.root, cgRunner))
-	c.Assert(err, IsNil)
-	c.Assert(st.Mode().IsDir(), Equals, true)
+	require.NoError(t, err)
+	assert.DirExists(t, filepath.Join(root, cgRunner))
 	// remove
 	err = cgroup.Remove(cgRunner)
-	c.Assert(err, IsNil)
-	// the directory is gone
-	_, err = os.Stat(filepath.Join(s.root, cgRunner))
-	c.Assert(err, ErrorMatches, ".*/a/b/c/runner: no such file or directory")
+	require.NoError(t, err)
+	assert.NoDirExists(t, filepath.Join(root, cgRunner))
 	// but only the leaf is removed
-	_, err = os.Stat(filepath.Join(s.root, filepath.Dir(cgRunner)))
-	c.Assert(err, IsNil)
+	assert.DirExists(t, filepath.Join(root, filepath.Dir(cgRunner)))
 }
 
-func (s *cgroupSuite) TestProperties(c *C) {
+func TestProperties(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(cgroup.MockSysFsCgroup(root))
+
 	err := cgroup.Add("/a/b/c/d")
-	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/memory.max"), nil, 0644)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/memory.max"), nil, 0644)
+	require.NoError(t, err)
 
 	for _, tc := range []struct {
 		val, expected string
@@ -74,10 +55,10 @@ func (s *cgroupSuite) TestProperties(c *C) {
 		{"2", "2\n"},
 	} {
 		err = cgroup.WriteProperty("/a/b/c/d", "memory.max", tc.val)
-		c.Assert(err, IsNil)
-		d, err := ioutil.ReadFile(filepath.Join(s.root, "/a/b/c/d/memory.max"))
-		c.Assert(err, IsNil)
-		c.Assert(string(d), DeepEquals, tc.expected)
+		require.NoError(t, err)
+		d, err := os.ReadFile(filepath.Join(root, "/a/b/c/d/memory.max"))
+		require.NoError(t, err)
+		assert.Equal(t, tc.expected, string(d))
 	}
 
 	val := `
@@ -88,76 +69,89 @@ oom 0
 oom_kill 0
 oom_group_kill 1
 `
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/memory.events.local"), []byte(val), 0644)
-	c.Assert(err, IsNil)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/memory.events.local"), []byte(val), 0644)
+	require.NoError(t, err)
 	v, err := cgroup.ReadKVProperty("/a/b/c/d", "memory.events.local", "max")
-	c.Assert(err, IsNil)
-	c.Assert(v, Equals, "954")
+	require.NoError(t, err)
+	assert.Equal(t, "954", v)
 	v, err = cgroup.ReadKVProperty("/a/b/c/d", "memory.events.local", "oom_group_kill")
-	c.Assert(err, IsNil)
-	c.Assert(v, Equals, "1")
+	require.NoError(t, err)
+	assert.Equal(t, "1", v)
 	_, err = cgroup.ReadKVProperty("/a/b/c/d", "memory.events.local", "missing")
-	c.Assert(err, Equals, cgroup.KeyNotFoundError)
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/memory.events.local"), []byte(`invalid`), 0644)
-	c.Assert(err, IsNil)
+	assert.Equal(t, cgroup.KeyNotFoundError, err)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/memory.events.local"), []byte(`invalid`), 0644)
+	require.NoError(t, err)
 	_, err = cgroup.ReadKVProperty("/a/b/c/d", "memory.events.local", "missing")
-	c.Assert(err, ErrorMatches, `cannot process line "invalid"`)
+	require.EqualError(t, err, `cannot process line "invalid"`)
 }
 
-func (s *cgroupSuite) TestMoveTo(c *C) {
+func TestMoveTo(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(cgroup.MockSysFsCgroup(root))
+
 	err := cgroup.Add("/a/b/c/d")
-	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/cgroup.procs"), nil, 0644)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.procs"), nil, 0644)
+	require.NoError(t, err)
 	err = cgroup.MovePidTo(1, "/a/b/c/d")
-	c.Assert(err, IsNil)
-	d, err := ioutil.ReadFile(filepath.Join(s.root, "/a/b/c/d/cgroup.procs"))
-	c.Assert(err, IsNil)
-	c.Assert(string(d), DeepEquals, "1\n")
+	require.NoError(t, err)
+	d, err := os.ReadFile(filepath.Join(root, "/a/b/c/d/cgroup.procs"))
+	require.NoError(t, err)
+	assert.Equal(t, "1\n", string(d))
 }
 
-func (s *cgroupSuite) TestFreeze(c *C) {
+func TestFreeze(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(cgroup.MockSysFsCgroup(root))
+
 	err := cgroup.Add("/a/b/c/d")
-	c.Assert(err, IsNil)
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/cgroup.freeze"), nil, 0644)
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.freeze"), nil, 0644)
+	require.NoError(t, err)
 
 	err = cgroup.Freeze("/a/b/c/d")
-	c.Assert(err, IsNil)
-	d, err := ioutil.ReadFile(filepath.Join(s.root, "/a/b/c/d/cgroup.freeze"))
-	c.Assert(err, IsNil)
-	c.Assert(string(d), DeepEquals, "1\n")
+	require.NoError(t, err)
+	d, err := os.ReadFile(filepath.Join(root, "/a/b/c/d/cgroup.freeze"))
+	require.NoError(t, err)
+	assert.Equal(t, "1\n", string(d))
 
 	err = cgroup.Freeze("/a/not-found")
-	c.Assert(err, ErrorMatches, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory")
+	require.Error(t, err)
+	assert.Regexp(t, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory", err.Error())
 
 	err = cgroup.Unfreeze("/a/b/c/d")
-	c.Assert(err, IsNil)
-	d, err = ioutil.ReadFile(filepath.Join(s.root, "/a/b/c/d/cgroup.freeze"))
-	c.Assert(err, IsNil)
-	c.Assert(string(d), DeepEquals, "0\n")
+	require.NoError(t, err)
+	d, err = os.ReadFile(filepath.Join(root, "/a/b/c/d/cgroup.freeze"))
+	require.NoError(t, err)
+	assert.Equal(t, "0\n", string(d))
 
 	err = cgroup.Unfreeze("/a/not-found")
-	c.Assert(err, ErrorMatches, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory")
+	require.Error(t, err)
+	assert.Regexp(t, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory", err.Error())
 }
 
-func (s *cgroupSuite) TestOccupied(c *C) {
+func TestOccupied(t *testing.T) {
+	root := t.TempDir()
+	t.Cleanup(cgroup.MockSysFsCgroup(root))
+
 	err := cgroup.Add("/a/b/c/d")
-	c.Assert(err, IsNil)
+	require.NoError(t, err)
 
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/cgroup.procs"), nil, 0644)
-	c.Assert(err, IsNil)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.procs"), nil, 0644)
+	require.NoError(t, err)
 	occupied, err := cgroup.Occupied("/a/b/c/d")
-	c.Assert(err, IsNil)
-	c.Assert(occupied, Equals, false)
+	require.NoError(t, err)
+	assert.False(t, occupied)
 
-	err = ioutil.WriteFile(filepath.Join(s.root, "a/b/c/d/cgroup.procs"), []byte("1234"), 0644)
-	c.Assert(err, IsNil)
+	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.procs"), []byte("1234"), 0644)
+	require.NoError(t, err)
 	occupied, err = cgroup.Occupied("/a/b/c/d")
-	c.Assert(err, IsNil)
-	c.Assert(occupied, Equals, true)
+	require.NoError(t, err)
+	assert.True(t, occupied)
 
 	occupied, err = cgroup.Occupied("/a/not-found")
-	c.Assert(err, ErrorMatches, "cannot open cgroup processes: open .*/a/not-found/cgroup.procs: no such file or directory")
-	c.Assert(occupied, Equals, false)
+	require.Error(t, err)
+	assert.Regexp(t, "cannot open cgroup processes: open.*/a/not-found/cgroup.procs: no such file or directory",
+		err.Error())
+	assert.False(t, occupied)
 }
