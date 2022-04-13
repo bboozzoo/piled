@@ -99,29 +99,3 @@ func TestMoveTo(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "1\n", string(d))
 }
-
-func TestOccupied(t *testing.T) {
-	root := t.TempDir()
-	t.Cleanup(cgroup.MockSysFsCgroup(root))
-
-	err := cgroup.Add("/a/b/c/d")
-	require.NoError(t, err)
-
-	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.procs"), nil, 0644)
-	require.NoError(t, err)
-	occupied, err := cgroup.Occupied("/a/b/c/d")
-	require.NoError(t, err)
-	assert.False(t, occupied)
-
-	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.procs"), []byte("1234"), 0644)
-	require.NoError(t, err)
-	occupied, err = cgroup.Occupied("/a/b/c/d")
-	require.NoError(t, err)
-	assert.True(t, occupied)
-
-	occupied, err = cgroup.Occupied("/a/not-found")
-	require.Error(t, err)
-	assert.Regexp(t, "cannot open cgroup processes: open.*/a/not-found/cgroup.procs: no such file or directory",
-		err.Error())
-	assert.False(t, occupied)
-}

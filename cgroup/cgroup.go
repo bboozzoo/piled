@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -111,24 +110,6 @@ func Add(cg string) error {
 func Remove(cg string) error {
 	cgPath := filepath.Join(sysFsCgroup, cg)
 	return osRemove(cgPath)
-}
-
-// Occupied returns true if the cgroup is occupied by at least one process.
-func Occupied(cg string) (bool, error) {
-	p := filepath.Join(sysFsCgroup, cg, "cgroup.procs")
-	f, err := os.Open(p)
-	if err != nil {
-		return false, fmt.Errorf("cannot open cgroup processes: %v", err)
-	}
-	defer f.Close()
-	buf := make([]byte, 10)
-	_, err = f.Read(buf[:])
-	if err == io.EOF || err == nil && len(bytes.TrimSpace(buf[:])) == 0 {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // Use only from tests, from cross package mocking
