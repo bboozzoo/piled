@@ -120,7 +120,7 @@ func Occupied(cg string) (bool, error) {
 		return false, fmt.Errorf("cannot open cgroup processes: %v", err)
 	}
 	defer f.Close()
-	buf := [10]byte{}
+	buf := make([]byte, 10)
 	_, err = f.Read(buf[:])
 	if err == io.EOF || err == nil && len(bytes.TrimSpace(buf[:])) == 0 {
 		return false, nil
