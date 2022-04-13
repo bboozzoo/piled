@@ -193,7 +193,7 @@ func (r *CgroupRunner) Stop(name string) (*Status, error) {
 	}
 	defer js.lock.Unlock()
 
-	if js.cmd != nil {
+	if js.active {
 		logrus.Tracef("job still active, killing")
 		if err := cgroup.WriteProperty(js.cg, "cgroup.kill", "1"); err != nil {
 			return nil, fmt.Errorf("cannot request all processes to be killed: %v", err)
