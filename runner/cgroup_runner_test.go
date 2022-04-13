@@ -46,6 +46,20 @@ func setUpTest(t *testing.T) string {
 	return cgroupRoot
 }
 
+func mockCgroupProps(t *testing.T, cgroupRoot, group string) {
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "cgroup.procs"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "cgroup.subtree_control"), "")
+}
+
+func mockCgroupJobProps(t *testing.T, cgroupRoot, group string) {
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "cgroup.kill"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "memory.events.local"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "cpu.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "io.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "memory.max"), "")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, group, "memory.oom.group"), "")
+}
+
 func TestIsShimEntry(t *testing.T) {
 	setUpTest(t)
 	is := runner.IsShimEntry()
@@ -176,12 +190,9 @@ exec sleep 3600
 	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
-	// runner will move the process to this group
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
-	// how the job will be killed
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
+	mockCgroupProps(t, cgroupRoot, "foo")
+	mockCgroupProps(t, cgroupRoot, "foo/runner")
+	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
 	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), tc.memoryEventsLocal)
 
 	restore = cgroup.MockOsRemove(func(p string) error {
@@ -282,13 +293,9 @@ touch %s
 	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
-	// runner will move the process to this group
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
-	// how the job will be killed
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), "")
+	mockCgroupProps(t, cgroupRoot, "foo")
+	mockCgroupProps(t, cgroupRoot, "foo/runner")
+	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
@@ -359,28 +366,15 @@ func TestJobWithResources(t *testing.T) {
 	cgroupRoot := setUpTest(t)
 	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
-	scriptStamp := filepath.Join(d, "script.stamp")
-	testutils.MockFile(t, scriptPath, fmt.Sprintf(`#!/bin/sh
-for arg in "$@"; do echo "# $arg" ; done
-touch %s
-`, scriptStamp))
-
+	testutils.MockFile(t, scriptPath, "")
 	require.NoError(t, os.Chmod(scriptPath, 0755))
 
 	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.procs"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/cgroup.subtree_control"), "")
-	// runner will move the process to this group
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/runner/cgroup.procs"), "")
-	// paths for the job group
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cgroup.kill"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/cpu.max"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/io.max"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.max"), "")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.oom.group"), "")
+	mockCgroupProps(t, cgroupRoot, "foo")
+	mockCgroupProps(t, cgroupRoot, "foo/runner")
+	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
