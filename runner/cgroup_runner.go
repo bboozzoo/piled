@@ -144,7 +144,6 @@ func (r *CgroupRunner) Start(name string, config Config) error {
 	if err != nil {
 		return fmt.Errorf("cannot open storage file: %v", err)
 	}
-	defer outputFile.Close()
 	cmd := exec.Command(procSelfExe, config.Command...)
 	cmd.Stdin = nil
 	cmd.Stdout = outputFile
@@ -161,8 +160,11 @@ func (r *CgroupRunner) Start(name string, config Config) error {
 			unix.CLONE_NEWNS, // mount
 	}
 	if err := cmdStart(cmd); err != nil {
+		outputFile.Close()
 		return fmt.Errorf("cannot start job: %v", err)
 	}
+	// the fd is no longer needed
+	outputFile.Close()
 
 	r.jobsLock.Lock()
 	defer r.jobsLock.Unlock()
