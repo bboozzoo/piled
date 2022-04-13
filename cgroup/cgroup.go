@@ -35,9 +35,11 @@ func WriteProperty(cg, property, value string) error {
 	if err != nil {
 		return fmt.Errorf("cannot open cgroup property file: %v", err)
 	}
-	defer f.Close()
-	_, err = fmt.Fprintf(f, "%v\n", value)
-	return err
+	if _, err = fmt.Fprintf(f, "%v\n", value); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 var KeyNotFoundError = fmt.Errorf("key not found")
