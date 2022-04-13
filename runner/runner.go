@@ -1,10 +1,10 @@
 package runner
 
 import (
-	"fmt"
+	"errors"
 )
 
-var JobNotFoundError = fmt.Errorf("job not found")
+var JobNotFoundError = errors.New("job not found")
 
 // Config of a job
 type Config struct {

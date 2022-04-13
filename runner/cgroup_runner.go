@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -417,11 +418,11 @@ var (
 // error setting up the environment.
 func ShimEntry() error {
 	if os.Getenv("_SHIM_IN_NAMESPACE") != "1" {
-		return fmt.Errorf("cannot use entrypoint when not in namespace")
+		return errors.New("cannot use entrypoint when not in namespace")
 	}
 	cg := os.Getenv("_SHIM_CG")
 	if cg == "" {
-		return fmt.Errorf("cannot run without cgroup path")
+		return errors.New("cannot run without cgroup path")
 	}
 
 	if err := prepareMountNS(); err != nil {
