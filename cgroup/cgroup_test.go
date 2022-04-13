@@ -100,36 +100,6 @@ func TestMoveTo(t *testing.T) {
 	assert.Equal(t, "1\n", string(d))
 }
 
-func TestFreeze(t *testing.T) {
-	root := t.TempDir()
-	t.Cleanup(cgroup.MockSysFsCgroup(root))
-
-	err := cgroup.Add("/a/b/c/d")
-	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(root, "a/b/c/d/cgroup.freeze"), nil, 0644)
-	require.NoError(t, err)
-
-	err = cgroup.Freeze("/a/b/c/d")
-	require.NoError(t, err)
-	d, err := os.ReadFile(filepath.Join(root, "/a/b/c/d/cgroup.freeze"))
-	require.NoError(t, err)
-	assert.Equal(t, "1\n", string(d))
-
-	err = cgroup.Freeze("/a/not-found")
-	require.Error(t, err)
-	assert.Regexp(t, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory", err.Error())
-
-	err = cgroup.Unfreeze("/a/b/c/d")
-	require.NoError(t, err)
-	d, err = os.ReadFile(filepath.Join(root, "/a/b/c/d/cgroup.freeze"))
-	require.NoError(t, err)
-	assert.Equal(t, "0\n", string(d))
-
-	err = cgroup.Unfreeze("/a/not-found")
-	require.Error(t, err)
-	assert.Regexp(t, "cannot open .*/a/not-found/cgroup.freeze: no such file or directory", err.Error())
-}
-
 func TestOccupied(t *testing.T) {
 	root := t.TempDir()
 	t.Cleanup(cgroup.MockSysFsCgroup(root))

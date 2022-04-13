@@ -112,14 +112,6 @@ func Remove(cg string) error {
 	return osRemove(cgPath)
 }
 
-func Freeze(cg string) error {
-	return WriteProperty(cg, "cgroup.freeze", "1")
-}
-
-func Unfreeze(cg string) error {
-	return WriteProperty(cg, "cgroup.freeze", "0")
-}
-
 // Occupied returns true if the cgroup is occupied by at least one process.
 func Occupied(cg string) (bool, error) {
 	p := filepath.Join(sysFsCgroup, cg, "cgroup.procs")
