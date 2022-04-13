@@ -19,8 +19,8 @@ import (
 	"github.com/bboozzoo/piled/testutils"
 )
 
-func setUpTest(t *testing.T) (cgroupRoot, tmp string) {
-	cgroupRoot = t.TempDir()
+func setUpTest(t *testing.T) string {
+	cgroupRoot := t.TempDir()
 
 	restore := runner.MockUnixExec(func(argv0 string, argv []string, envv []string) error {
 		t.Fatalf("unixExec not mocked")
@@ -30,7 +30,7 @@ func setUpTest(t *testing.T) (cgroupRoot, tmp string) {
 	restore = cgroup.MockSysFsCgroup(cgroupRoot)
 	t.Cleanup(restore)
 
-	tmp = t.TempDir()
+	tmp := t.TempDir()
 	oldTmp, wasSet := os.LookupEnv("TMPDIR")
 	os.Setenv("TMPDIR", tmp)
 	t.Cleanup(func() {
@@ -43,7 +43,7 @@ func setUpTest(t *testing.T) (cgroupRoot, tmp string) {
 	t.Cleanup(runner.MockCgroupIsV2(func() (bool, error) {
 		return true, nil
 	}))
-	return cgroupRoot, tmp
+	return cgroupRoot
 }
 
 func TestIsShimEntry(t *testing.T) {
@@ -59,7 +59,7 @@ func TestIsShimEntry(t *testing.T) {
 }
 
 func TestShimEntryHappy(t *testing.T) {
-	cgroupRoot, _ := setUpTest(t)
+	cgroupRoot := setUpTest(t)
 
 	os.Setenv("_SHIM_IN_NAMESPACE", "1")
 	defer os.Unsetenv("_SHIM_IN_NAMESPACE")
@@ -106,7 +106,7 @@ func TestShimEntryHappy(t *testing.T) {
 }
 
 func TestShimEntryExecFails(t *testing.T) {
-	cgroupRoot, _ := setUpTest(t)
+	cgroupRoot := setUpTest(t)
 
 	os.Setenv("_SHIM_IN_NAMESPACE", "1")
 	defer os.Unsetenv("_SHIM_IN_NAMESPACE")
@@ -160,7 +160,7 @@ func TestJobCycleOOM(t *testing.T) {
 }
 
 func testJobCycle(t *testing.T, tc jcTest) {
-	cgroupRoot, tmpdir := setUpTest(t)
+	cgroupRoot := setUpTest(t)
 	d := t.TempDir()
 
 	scriptPath := filepath.Join(d, "script")
@@ -245,10 +245,6 @@ exec sleep 3600
 	expectedOutput := `# /bin/ls
 # -l
 `
-	// in the meantime, the job's output is already in a file
-	testutils.TextFileEquals(t,
-		filepath.Join(tmpdir, "cgroup-runner-output/baz"),
-		expectedOutput)
 
 	// stop will block trying to kill the process through cgroups, but since
 	// we mocked everything, we need to simulate what cgroups would do
@@ -272,7 +268,7 @@ exec sleep 3600
 }
 
 func TestJobCycleHappy(t *testing.T) {
-	cgroupRoot, _ := setUpTest(t)
+	cgroupRoot := setUpTest(t)
 	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
 	scriptStamp := filepath.Join(d, "script.stamp")
@@ -370,7 +366,7 @@ touch %s
 }
 
 func TestJobWithResources(t *testing.T) {
-	cgroupRoot, _ := setUpTest(t)
+	cgroupRoot := setUpTest(t)
 	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
 	scriptStamp := filepath.Join(d, "script.stamp")
