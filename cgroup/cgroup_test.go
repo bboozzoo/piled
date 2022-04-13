@@ -11,7 +11,7 @@ import (
 	"github.com/bboozzoo/piled/cgroup"
 )
 
-func TestBasics(t *testing.T) {
+func TestBasicGroupManipulation(t *testing.T) {
 	root := t.TempDir()
 	psc := filepath.Join(root, "proc-self-cgroup")
 	t.Cleanup(cgroup.MockProcSelfCgroup(psc))
@@ -49,16 +49,16 @@ func TestProperties(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
-		val, expected string
+		got, want string
 	}{
-		{"1", "1\n"},
-		{"2", "2\n"},
+		{got: "1", want: "1\n"},
+		{got: "2", want: "2\n"},
 	} {
-		err = cgroup.WriteProperty("/a/b/c/d", "memory.max", tc.val)
+		err = cgroup.WriteProperty("/a/b/c/d", "memory.max", tc.got)
 		require.NoError(t, err)
 		d, err := os.ReadFile(filepath.Join(root, "/a/b/c/d/memory.max"))
 		require.NoError(t, err)
-		assert.Equal(t, tc.expected, string(d))
+		assert.Equal(t, tc.want, string(d))
 	}
 
 	val := `
