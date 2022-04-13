@@ -242,21 +242,23 @@ func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 			logrus.Tracef("cannot wait for process: %v", err)
 			return
 		}
-		ws := unix.WaitStatus(pErr.Sys().(syscall.WaitStatus))
-		logrus.Tracef("job failed, signal? %v (%v)", ws.Signaled(), ws.Signal())
-		js.exitStatus = ws.ExitStatus()
-		if ws.Signaled() {
-			if ws.Signal() == os.Kill {
-				// maybe OOM
-				gk, err := cgroup.ReadKVProperty(js.cg, "memory.events.local", "oom_group_kill")
-				if err != nil {
-					logrus.Tracef("cannot process memory.events.local: %v", err)
-				} else if gk == "1" {
-					logrus.Tracef("OOM kill")
-					js.oomKill = true
+		if sws, ok := pErr.Sys().(syscall.WaitStatus); ok {
+			ws := unix.WaitStatus(sws)
+			logrus.Tracef("job failed, signal? %v (%v)", ws.Signaled(), ws.Signal())
+			js.exitStatus = ws.ExitStatus()
+			if ws.Signaled() {
+				if ws.Signal() == os.Kill {
+					// maybe OOM
+					gk, err := cgroup.ReadKVProperty(js.cg, "memory.events.local", "oom_group_kill")
+					if err != nil {
+						logrus.Tracef("cannot process memory.events.local: %v", err)
+					} else if gk == "1" {
+						logrus.Tracef("OOM kill")
+						js.oomKill = true
+					}
 				}
+				js.termSignal = int(ws.Signal())
 			}
-			js.termSignal = int(ws.Signal())
 		}
 	} else {
 		logrus.Tracef("job succeeded")
