@@ -354,49 +354,46 @@ func (r *cgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 		// TODO: use inotify rather than poor man's poll
 		defer f.Close()
 		defer close(chunksChan)
-		fi, err := f.Stat()
-		if err != nil {
-			logrus.Tracef("cannot stat: %v", err)
-			return
-		}
-		oldSize := fi.Size()
-		logrus.Tracef("current size: %v", oldSize)
-		if err := sendBytes(oldSize); err != nil {
-			logrus.Tracef("cannot send: %v", err)
-			return
-		}
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
+
+		oldSize := int64(0)
+		needLastCheck := true
 	Loop:
 		for {
-			select {
-			case <-ctx.Done():
-				logrus.Tracef("output canceled")
-				break Loop
-			case <-js.done:
-				logrus.Tracef("job finished, no more logs")
-				// job has finished, no more output
+			fi, err := f.Stat()
+			if err != nil {
+				logrus.Tracef("cannot stat: %v", err)
 				return
-			case <-tick.C:
-				logrus.Tracef("send tick")
-				fi, err := f.Stat()
-				if err != nil {
-					logrus.Tracef("cannot stat: %v", err)
-					break Loop
-				}
-				nowSize := fi.Size()
-				if nowSize == oldSize {
-					continue
-				}
-				if nowSize < oldSize {
-					logrus.Tracef("output truncated")
-					return
-				}
+			}
+			nowSize := fi.Size()
+			logrus.Tracef("now size: %v", nowSize)
+			if nowSize < oldSize {
+				logrus.Tracef("output truncated")
+				return
+			}
+			if nowSize > oldSize {
 				if err := sendBytes(nowSize - oldSize); err != nil {
 					logrus.Tracef("cannot send: %v", err)
 					return
 				}
 				oldSize = nowSize
+			}
+			select {
+			case <-ctx.Done():
+				logrus.Tracef("output canceled")
+				break Loop
+			case <-js.done:
+				if needLastCheck {
+					// do one last check before closing the
+					// output
+					needLastCheck = false
+					continue
+				}
+				// job has finished, no more output
+				return
+			case <-tick.C:
+				logrus.Tracef("send tick")
 			}
 		}
 	}()
