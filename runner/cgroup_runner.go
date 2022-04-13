@@ -30,7 +30,8 @@ type jobState struct {
 	lock sync.Mutex
 }
 
-type cgroupRunner struct {
+// CgroupRunner is a runner that uses cgroups to organize the jobs.
+type CgroupRunner struct {
 	cgRoot      string
 	storageRoot string
 	jobs        map[string]*jobState
@@ -43,7 +44,7 @@ var cgroupIsV2 = cgroup.IsV2
 // runner means that the current process is moved to a new chins cgroup called
 // 'runner'. The IO, CPU and memory controllers get enabled for subtree
 // hierarchy. The config is optional.
-func NewCgroupRunner(config *RunnerConfig) (*cgroupRunner, error) {
+func NewCgroupRunner(config *RunnerConfig) (*CgroupRunner, error) {
 	v2, err := cgroupIsV2()
 	if err != nil {
 		return nil, fmt.Errorf("cannot query cgroup version: %v", err)
@@ -72,7 +73,7 @@ func NewCgroupRunner(config *RunnerConfig) (*cgroupRunner, error) {
 	if config != nil && config.StorageRoot != "" {
 		storageRoot = config.StorageRoot
 	}
-	return &cgroupRunner{
+	return &CgroupRunner{
 		cgRoot:      cgCurrent,
 		storageRoot: storageRoot,
 		jobs:        make(map[string]*jobState),
@@ -83,7 +84,7 @@ var procSelfExe = "/proc/self/exe"
 
 // jobFindAndLock find a job matching the given name, return it taking it's
 // lock.
-func (r *cgroupRunner) jobFindAndLock(name string) (*jobState, error) {
+func (r *CgroupRunner) jobFindAndLock(name string) (*jobState, error) {
 	r.jobsLock.Lock()
 	defer r.jobsLock.Unlock()
 	js, ok := r.jobs[name]
@@ -110,7 +111,7 @@ var cmdStart = func(cmd *exec.Cmd) error {
 // command. The caller must provide means for reaching the shim's entrypoint,
 // preferrably testing with IsShimEntry() and calling ShimEntry() if the test is
 // positive.
-func (r *cgroupRunner) Start(name string, config Config) error {
+func (r *CgroupRunner) Start(name string, config Config) error {
 	// TODO check if job with given name already exists
 
 	cg := filepath.Join(r.cgRoot, name)
@@ -184,7 +185,7 @@ func (r *cgroupRunner) Start(name string, config Config) error {
 // All resources associated with a job are released, its output file is removed,
 // thus if the output is of value, it should be collected earlier. If the job's
 // process has not completed yet, it will be forcefully killed.
-func (r *cgroupRunner) Stop(name string) (*Status, error) {
+func (r *CgroupRunner) Stop(name string) (*Status, error) {
 	js, err := r.jobFindAndLock(name)
 	if err != nil {
 		return nil, err
@@ -241,7 +242,7 @@ func (r *cgroupRunner) maybePurgeCgroup(js *jobState) error {
 	return nil
 }
 
-func (r *cgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
+func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 	err := js.cmd.Wait()
 	logrus.Tracef("wait err: %v", err)
 
@@ -290,7 +291,7 @@ func (r *cgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 
 // Status of a job. If the job has already completed, its status will indicate
 // that the active status is false.
-func (r *cgroupRunner) Status(name string) (*Status, error) {
+func (r *CgroupRunner) Status(name string) (*Status, error) {
 	js, err := r.jobFindAndLock(name)
 	if err != nil {
 		return nil, err
@@ -313,7 +314,7 @@ func (r *cgroupRunner) Status(name string) (*Status, error) {
 //
 // TODO use a smarter output channel to convey a struct with either output bytes
 // or an error
-func (r *cgroupRunner) Output(name string) (output <-chan []byte, cancel func(), err error) {
+func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(), err error) {
 	js, err := r.jobFindAndLock(name)
 	if err != nil {
 		return nil, nil, err
