@@ -81,21 +81,6 @@ func NewCgroupRunner(config *RunnerConfig) (*CgroupRunner, error) {
 
 var procSelfExe = "/proc/self/exe"
 
-// jobFindAndLock find a job matching the given name, return it taking it's
-// lock.
-func (r *CgroupRunner) jobFindAndLock(name string) (*jobState, error) {
-	r.jobsLock.Lock()
-	defer r.jobsLock.Unlock()
-	js, ok := r.jobs[name]
-	if !ok {
-		return nil, JobNotFoundError
-	}
-
-	// job exists, lock and return
-	js.lock.Lock()
-	return js, nil
-}
-
 var cmdStart = func(cmd *exec.Cmd) error {
 	return cmd.Start()
 }
@@ -187,11 +172,17 @@ func (r *CgroupRunner) Start(name string, config Config) error {
 // thus if the output is of value, it should be collected earlier. If the job's
 // process has not completed yet, it will be forcefully killed.
 func (r *CgroupRunner) Stop(name string) (*Status, error) {
-	js, err := r.jobFindAndLock(name)
-	if err != nil {
-		return nil, err
+	r.jobsLock.Lock()
+	js, ok := r.jobs[name]
+	if !ok {
+		r.jobsLock.Unlock()
+		return nil, JobNotFoundError
 	}
+	// lock the individual job
+	js.lock.Lock()
 	defer js.lock.Unlock()
+	// unlock the jobs lock
+	r.jobsLock.Unlock()
 
 	if js.active {
 		logrus.Tracef("job still active, killing")
@@ -273,11 +264,18 @@ func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 // Status of a job. If the job has already completed, its status will indicate
 // that the active status is false.
 func (r *CgroupRunner) Status(name string) (*Status, error) {
-	js, err := r.jobFindAndLock(name)
-	if err != nil {
-		return nil, err
+	r.jobsLock.Lock()
+	js, ok := r.jobs[name]
+	if !ok {
+		r.jobsLock.Unlock()
+		return nil, JobNotFoundError
 	}
+	// lock the individual job
+	js.lock.Lock()
+	// unlock the jobs lock
 	defer js.lock.Unlock()
+
+	r.jobsLock.Unlock()
 
 	return &Status{
 		Active:     js.active,
@@ -296,13 +294,19 @@ func (r *CgroupRunner) Status(name string) (*Status, error) {
 // TODO use a smarter output channel to convey a struct with either output bytes
 // or an error
 func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(), err error) {
-	js, err := r.jobFindAndLock(name)
-	if err != nil {
-		return nil, nil, err
+	r.jobsLock.Lock()
+	js, ok := r.jobs[name]
+	if !ok {
+		r.jobsLock.Unlock()
+		return nil, nil, JobNotFoundError
 	}
+	// lock the individual job
+	js.lock.Lock()
 	// this is ok, as further code will only reference the done channel and
 	// keeps an open file
 	defer js.lock.Unlock()
+	// unlock the jobs lock
+	r.jobsLock.Unlock()
 
 	logrus.Tracef("output file: %v", js.outputFile)
 	f, err := os.Open(js.outputFile)
