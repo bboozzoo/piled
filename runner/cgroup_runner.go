@@ -311,11 +311,11 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 
 	logrus.Tracef("output file: %v", js.outputFile)
 	f, err := os.Open(js.outputFile)
-	defer func() {
-		if err != nil {
-			f.Close()
-		}
-	}()
+	if err != nil {
+		return nil, nil, err
+	}
+	// no need to defer a close, there are no error points between here and
+	// the goroutine that feeds the output
 
 	chunksChan := make(chan []byte)
 	// for cancelling
@@ -342,6 +342,8 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 	go func() {
 		logrus.Tracef("output feeder")
 		// TODO: use inotify rather than poor man's poll
+
+		// actual close of a file opened in the parent
 		defer f.Close()
 		defer close(chunksChan)
 		tick := time.NewTicker(time.Second)
