@@ -81,13 +81,16 @@ var procSelfCgroup = "/proc/self/cgroup"
 
 // Current cgroup of the process.
 func Current() (string, error) {
-	cgNowRaw, err := os.ReadFile(procSelfCgroup)
+	cgCurrentRaw, err := os.ReadFile(procSelfCgroup)
 	if err != nil {
 		return "", err
 	}
-	split := bytes.SplitN(bytes.TrimSpace(cgNowRaw), []byte("::"), 2)
+	// the format is:
+	// 0::/foo/bar/baz
+	// where the current group is right after ::
+	split := bytes.SplitN(bytes.TrimSpace(cgCurrentRaw), []byte("::"), 2)
 	if len(split) != 2 {
-		return "", fmt.Errorf("invalid cgroup content: %v", string(cgNowRaw))
+		return "", fmt.Errorf("invalid cgroup content: %v", string(cgCurrentRaw))
 	}
 	return string(split[1]), nil
 }
