@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -334,7 +333,9 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 	}()
 
 	chunksChan := make(chan []byte)
-	ctx, cancel := context.WithCancel(context.Background())
+	// for cancelling
+	cancelChan := make(chan struct{})
+
 	sendBytes := func(howMuch int64) error {
 		logrus.Tracef("send %v bytes", howMuch)
 		for sent := int64(0); sent < howMuch; {
@@ -384,7 +385,7 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 				oldSize = nowSize
 			}
 			select {
-			case <-ctx.Done():
+			case <-cancelChan:
 				logrus.Tracef("output canceled")
 				break Loop
 			case <-js.done:
@@ -401,7 +402,7 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 			}
 		}
 	}()
-	return chunksChan, cancel, nil
+	return chunksChan, func() { close(cancelChan) }, nil
 }
 
 // IsShimEntry returns true if the process is executing as a runner shim
