@@ -329,7 +329,7 @@ func (r *cgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 		}
 	}()
 
-	chunksChan := make(chan []byte, 100)
+	chunksChan := make(chan []byte)
 	ctx, cancel := context.WithCancel(context.Background())
 	sendBytes := func(howMuch int64) error {
 		logrus.Tracef("send %v bytes", howMuch)
