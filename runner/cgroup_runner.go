@@ -41,7 +41,7 @@ type CgroupRunner struct {
 var cgroupIsV2 = cgroup.IsV2
 
 // NewCgroupRunner returns a new runner, or an error. Note that creating a
-// runner means that the current process is moved to a new chins cgroup called
+// runner means that the current process is moved to a new shim cgroup called
 // 'runner'. The IO, CPU and memory controllers get enabled for subtree
 // hierarchy. The config is optional.
 func NewCgroupRunner(config *RunnerConfig) (*CgroupRunner, error) {
