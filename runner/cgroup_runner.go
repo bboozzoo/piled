@@ -324,7 +324,7 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 	sendBytes := func(howMuch int64) error {
 		logrus.Tracef("send %v bytes", howMuch)
 		for sent := int64(0); sent < howMuch; {
-			buf := [4096]byte{}
+			buf := make([]byte, 4096)
 			end := howMuch - sent
 			if end > int64(len(buf)) {
 				end = int64(len(buf))
