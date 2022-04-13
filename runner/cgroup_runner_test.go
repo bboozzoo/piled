@@ -360,6 +360,18 @@ touch %s
 	status, err = r.Stop("baz")
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatus, status)
+
+	// output of the job is still accessible
+	buf.Reset()
+	outChan, cancel, err = r.Output("baz")
+	require.NoError(t, err)
+	require.NotNil(t, cancel)
+	require.NotNil(t, outChan)
+	for chunk := range outChan {
+		buf.Write(chunk)
+	}
+	// again the same output
+	require.Equal(t, expectedOutput, buf.String())
 }
 
 func TestJobWithResources(t *testing.T) {

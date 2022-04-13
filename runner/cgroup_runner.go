@@ -208,23 +208,14 @@ func (r *CgroupRunner) Stop(name string) (*Status, error) {
 	// return
 	js.lock.Lock()
 
-	if err := cgroup.Remove(js.cg); err != nil {
-		return nil, fmt.Errorf("cannot remove group: %v", err)
-	}
-	if err := os.Remove(js.outputFile); err != nil {
-		// non fatal, tough luck
-		logrus.Tracef("cannot remove output file: %v", err)
-	}
 	status := &Status{
 		Active:     js.active, // which should be false
 		ExitStatus: js.exitStatus,
 		Signal:     js.termSignal,
 		OOM:        js.oomKill,
 	}
-	// drop the job
-	r.jobsLock.Lock()
-	defer r.jobsLock.Unlock()
-	delete(r.jobs, name)
+
+	// keep the job and its output such that it can be queried later
 
 	return status, nil
 }
@@ -271,6 +262,10 @@ func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 	// the main process, which had pid 1 in the namespace, has stopped, kernel
 	// took care of killing all the remaining processes
 
+	// we can remove the cgroup now
+	if err := cgroup.Remove(js.cg); err != nil {
+		logrus.Tracef("cannot remove group: %v", err)
+	}
 	// let everyone know that the job is done
 	close(js.done)
 }
