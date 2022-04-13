@@ -267,7 +267,7 @@ exec sleep 3600
 	assert.Equal(t, expectedOutput, buf.String())
 }
 
-func TestJobCycleHappy(t *testing.T) {
+func TestJobQuickCycleHappy(t *testing.T) {
 	cgroupRoot := setUpTest(t)
 	d := t.TempDir()
 	scriptPath := filepath.Join(d, "script")
@@ -317,11 +317,24 @@ touch %s
 	})
 	require.NoError(t, err)
 
-	// waitn until the process is gone
-	require.Eventually(t, func() bool {
-		err := syscall.Kill(hijackedCmd.Process.Pid, 0)
-		return err == syscall.ESRCH
-	}, 5*time.Second, 100*time.Millisecond)
+	// the process should exit quickly at which point the output channel
+	// will be closed
+	buf := bytes.Buffer{}
+	outChan, cancel, err := r.Output("baz")
+	require.NoError(t, err)
+	require.NotNil(t, cancel)
+	require.NotNil(t, outChan)
+	for chunk := range outChan {
+		buf.Write(chunk)
+	}
+	// double check that the process is gone
+	require.Equal(t, syscall.ESRCH, syscall.Kill(hijackedCmd.Process.Pid, 0))
+
+	expectedOutput := `# /bin/ls
+# -l
+`
+	// output is complete
+	require.Equal(t, expectedOutput, buf.String())
 
 	expectedStatus := &runner.Status{
 		Active:     false,
@@ -329,40 +342,17 @@ touch %s
 		ExitStatus: 0,
 		OOM:        false,
 	}
-	// check if the process is alive
-	require.Equal(t, syscall.ESRCH, syscall.Kill(hijackedCmd.Process.Pid, 0))
 	status, err := r.Status("baz")
 	t.Logf("status %+v err %v", status, err)
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatus, status)
 
-	outputReaderChan := make(chan struct{}, 1)
-	outChan, cancel, err := r.Output("baz")
-	require.NoError(t, err)
-	require.NotNil(t, cancel)
-	require.NotNil(t, outChan)
-
-	buf := bytes.Buffer{}
-	go func() {
-		for chunk := range outChan {
-			buf.Write(chunk)
-		}
-		close(outputReaderChan)
-	}()
-
-	// reading of output will complete now, since the job is already dead
-	<-outputReaderChan
-	expectedOutput := `# /bin/ls
-# -l
-`
-	require.Equal(t, expectedOutput, buf.String())
 	testutils.TextFileEquals(t, filepath.Join(storageDir, "baz"), expectedOutput)
 	// stop will not block on anything
 	t.Logf("stop")
 	status, err = r.Stop("baz")
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatus, status)
-
 }
 
 func TestJobWithResources(t *testing.T) {
