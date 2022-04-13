@@ -3,6 +3,7 @@ module github.com/bboozzoo/piled
 go 1.17
 
 require (
+	github.com/google/uuid v1.3.0
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.7.1
 	golang.org/x/sys v0.0.0-20220408201424-a24fb2fb8a0f
