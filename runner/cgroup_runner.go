@@ -229,23 +229,6 @@ func (r *CgroupRunner) Stop(name string) (*Status, error) {
 	return status, nil
 }
 
-func (r *cgroupRunner) maybePurgeCgroup(js *jobState) error {
-	occupied, err := cgroup.Occupied(js.cg)
-	if err != nil {
-		return fmt.Errorf("cannot perform cgroup occupancy check: %v", err)
-	}
-	if !occupied {
-		// nothing left in the cgroup
-		return nil
-	}
-
-	logrus.Tracef("job processes still active, killing")
-	if err := cgroup.WriteProperty(js.cg, "cgroup.kill", "1"); err != nil {
-		return fmt.Errorf("cannot request all processes to be killed: %v", err)
-	}
-	return nil
-}
-
 func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 	err := js.cmd.Wait()
 	logrus.Tracef("wait err: %v", err)
@@ -283,12 +266,9 @@ func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 	// cmd is not neded anymore
 	js.cmd = nil
 
-	// the main process has stopped, but it may have spawned more processes,
-	// which would be reparented to us now, however, their status is of no
-	// interest to us
-	if err := r.maybePurgeCgroup(js); err != nil {
-		logrus.Tracef("cannot purge the job's cgroup: %v", err)
-	}
+	// the main process, which had pid 1 in the namespace, has stopped, kernel
+	// took care of killing all the remaining processes
+
 	// let everyone know that the job is done
 	close(js.done)
 }
