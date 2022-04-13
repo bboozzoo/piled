@@ -34,4 +34,6 @@ type Status struct {
 type RunnerConfig struct {
 	// StorageRoot is where the job output will be stored
 	StorageRoot string
+	// JobNamePrefix is a prefix to use for job names, eg. "pile."
+	JobNamePrefix string
 }

@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
 
@@ -35,6 +36,7 @@ type CgroupRunner struct {
 	storageRoot string
 	jobs        map[string]*jobState
 	jobsLock    sync.Mutex
+	namePrefix  string
 }
 
 var cgroupIsV2 = cgroup.IsV2
@@ -44,6 +46,18 @@ var cgroupIsV2 = cgroup.IsV2
 // 'runner'. The IO, CPU and memory controllers get enabled for subtree
 // hierarchy. The config is optional.
 func NewCgroupRunner(config *RunnerConfig) (*CgroupRunner, error) {
+	storageRoot := filepath.Join(os.TempDir(), "cgroup-runner-output")
+	namePrefix := "job."
+	if config != nil {
+		if config.StorageRoot != "" {
+			storageRoot = config.StorageRoot
+		}
+		if config.JobNamePrefix != "" {
+			// TODO validate that name prefix is reasonable
+			namePrefix = config.JobNamePrefix
+		}
+	}
+
 	v2, err := cgroupIsV2()
 	if err != nil {
 		return nil, fmt.Errorf("cannot query cgroup version: %v", err)
@@ -68,14 +82,11 @@ func NewCgroupRunner(config *RunnerConfig) (*CgroupRunner, error) {
 	if err := cgroup.WriteProperty(cgCurrent, "cgroup.subtree_control", "+cpu +io +memory"); err != nil {
 		return nil, fmt.Errorf("cannot enable controllers in %v: %v", cgCurrent, err)
 	}
-	storageRoot := filepath.Join(os.TempDir(), "cgroup-runner-output")
-	if config != nil && config.StorageRoot != "" {
-		storageRoot = config.StorageRoot
-	}
 	return &CgroupRunner{
 		cgRoot:      cgCurrent,
 		storageRoot: storageRoot,
 		jobs:        make(map[string]*jobState),
+		namePrefix:  namePrefix,
 	}, nil
 }
 
@@ -85,7 +96,13 @@ var cmdStart = func(cmd *exec.Cmd) error {
 	return cmd.Start()
 }
 
-// Start a new job with a given name.
+func (r *CgroupRunner) jobNameFor(name string) string {
+	return r.namePrefix + name
+}
+
+var uuidNew = uuid.NewString
+
+// Start a new job and return its name or an error.
 //
 // This will spawn a new process by calling /proc/self/exe with a number of
 // command line arguments. The child is run with a new PID, memory and network
@@ -95,38 +112,39 @@ var cmdStart = func(cmd *exec.Cmd) error {
 // command. The caller must provide means for reaching the shim's entrypoint,
 // preferrably testing with IsShimEntry() and calling ShimEntry() if the test is
 // positive.
-func (r *CgroupRunner) Start(name string, config Config) error {
-	// TODO check if job with given name already exists
+func (r *CgroupRunner) Start(config Config) (string, error) {
+	name := r.jobNameFor(uuidNew())
+	// TODO check name conflicts
 
 	cg := filepath.Join(r.cgRoot, name)
 	if err := cgroup.Add(cg); err != nil {
-		return fmt.Errorf("cannot add job cgroup %v: %v", cg, err)
+		return "", fmt.Errorf("cannot add job cgroup %v: %v", cg, err)
 	}
 	if config.IOMax != "" {
 		if err := cgroup.WriteProperty(cg, "io.max", config.IOMax); err != nil {
-			return fmt.Errorf("cannot set IO max: %v", err)
+			return "", fmt.Errorf("cannot set IO max: %v", err)
 		}
 	}
 	if config.CPUMax != "" {
 		if err := cgroup.WriteProperty(cg, "cpu.max", config.CPUMax); err != nil {
-			return fmt.Errorf("cannot set CPU pressure: %v", err)
+			return "", fmt.Errorf("cannot set CPU pressure: %v", err)
 		}
 	}
 	if config.MemoryMax != "" {
 		if err := cgroup.WriteProperty(cg, "memory.max", config.MemoryMax); err != nil {
-			return fmt.Errorf("cannot set CPU pressure: %v", err)
+			return "", fmt.Errorf("cannot set CPU pressure: %v", err)
 		}
 		if err := cgroup.WriteProperty(cg, "memory.oom.group", "1"); err != nil {
-			return fmt.Errorf("cannot enable OOM group kill: %v", err)
+			return "", fmt.Errorf("cannot enable OOM group kill: %v", err)
 		}
 	}
 	if err := os.MkdirAll(r.storageRoot, 0700); err != nil {
-		return fmt.Errorf("cannot prepare storage directory: %v", err)
+		return "", fmt.Errorf("cannot prepare storage directory: %v", err)
 	}
 	outputPath := filepath.Join(r.storageRoot, name)
 	outputFile, err := os.Create(outputPath)
 	if err != nil {
-		return fmt.Errorf("cannot open storage file: %v", err)
+		return "", fmt.Errorf("cannot open storage file: %v", err)
 	}
 	cmd := exec.Command(procSelfExe, config.Command...)
 	cmd.Stdin = nil
@@ -145,7 +163,7 @@ func (r *CgroupRunner) Start(name string, config Config) error {
 	}
 	if err := cmdStart(cmd); err != nil {
 		outputFile.Close()
-		return fmt.Errorf("cannot start job: %v", err)
+		return "", fmt.Errorf("cannot start job: %v", err)
 	}
 	// the fd is no longer needed
 	outputFile.Close()
@@ -164,7 +182,7 @@ func (r *CgroupRunner) Start(name string, config Config) error {
 
 	go r.jobWaitUntilDoneUnlocked(js)
 
-	return nil
+	return name, nil
 }
 
 // Stop stops a job with a given name, returns the job's status or an error.

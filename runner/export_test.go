@@ -51,3 +51,11 @@ func MockCgroupIsV2(m func() (bool, error)) (restore func()) {
 		cgroupIsV2 = old
 	}
 }
+
+func MockUUIDNew(m func() string) (restore func()) {
+	old := uuidNew
+	uuidNew = m
+	return func() {
+		uuidNew = old
+	}
+}

@@ -192,12 +192,17 @@ exec sleep 3600
 	defer restore()
 	mockCgroupProps(t, cgroupRoot, "foo")
 	mockCgroupProps(t, cgroupRoot, "foo/runner")
-	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
-	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz/memory.events.local"), tc.memoryEventsLocal)
+	// set up everything for a job named "baz.1234-1234"
+	restore = runner.MockUUIDNew(func() string {
+		return "1234-1234"
+	})
+	defer restore()
+	mockCgroupJobProps(t, cgroupRoot, "foo/baz.1234-1234")
+	testutils.MockFile(t, filepath.Join(cgroupRoot, "foo/baz.1234-1234/memory.events.local"), tc.memoryEventsLocal)
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz.1234-1234"), p)
 		return nil
 	})
 	defer restore()
@@ -219,14 +224,17 @@ exec sleep 3600
 		return err
 	})
 
-	r, err := runner.NewCgroupRunner(nil)
+	r, err := runner.NewCgroupRunner(&runner.RunnerConfig{
+		JobNamePrefix: "baz.",
+	})
 	require.NoError(t, err)
-	err = r.Start("baz", runner.Config{
+	jobName, err := r.Start(runner.Config{
 		Command: []string{"/bin/ls", "-l"},
 	})
 	require.NoError(t, err)
+	require.Equal(t, "baz.1234-1234", jobName)
 
-	status, err := r.Status("baz")
+	status, err := r.Status(jobName)
 	t.Logf("status %+v err %v", status, err)
 	require.NoError(t, err)
 	assert.Equal(t, &runner.Status{
@@ -240,7 +248,7 @@ exec sleep 3600
 	}, 5*time.Second, 100*time.Millisecond)
 
 	outputReaderChan := make(chan struct{}, 1)
-	outChan, cancel, err := r.Output("baz")
+	outChan, cancel, err := r.Output(jobName)
 	require.NoError(t, err)
 	require.NotNil(t, cancel)
 	require.NotNil(t, outChan)
@@ -262,7 +270,7 @@ exec sleep 3600
 	stopDone := make(chan struct{}, 1)
 	go func() {
 		t.Logf("stop")
-		status, err = r.Stop("baz")
+		status, err = r.Stop(jobName)
 		close(stopDone)
 
 	}()
@@ -293,13 +301,18 @@ touch %s
 	testutils.MockFile(t, filepath.Join(d, "proc-self-cgroup"), "0::/foo")
 	restore := cgroup.MockProcSelfCgroup(filepath.Join(d, "proc-self-cgroup"))
 	defer restore()
+	// set up everything for a job named "job.1234-1234"
+	restore = runner.MockUUIDNew(func() string {
+		return "1234-1234"
+	})
+	defer restore()
 	mockCgroupProps(t, cgroupRoot, "foo")
 	mockCgroupProps(t, cgroupRoot, "foo/runner")
-	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
+	mockCgroupJobProps(t, cgroupRoot, "foo/job.1234-1234")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/job.1234-1234"), p)
 		return nil
 	})
 	defer restore()
@@ -317,17 +330,19 @@ touch %s
 	storageDir := t.TempDir()
 	r, err := runner.NewCgroupRunner(&runner.RunnerConfig{
 		StorageRoot: storageDir,
+		// use default job name prefix
 	})
 	require.NoError(t, err)
-	err = r.Start("baz", runner.Config{
+	jobName, err := r.Start(runner.Config{
 		Command: []string{"/bin/ls", "-l"},
 	})
 	require.NoError(t, err)
+	require.Equal(t, "job.1234-1234", jobName)
 
 	// the process should exit quickly at which point the output channel
 	// will be closed
 	buf := bytes.Buffer{}
-	outChan, cancel, err := r.Output("baz")
+	outChan, cancel, err := r.Output(jobName)
 	require.NoError(t, err)
 	require.NotNil(t, cancel)
 	require.NotNil(t, outChan)
@@ -349,21 +364,21 @@ touch %s
 		ExitStatus: 0,
 		OOM:        false,
 	}
-	status, err := r.Status("baz")
+	status, err := r.Status(jobName)
 	t.Logf("status %+v err %v", status, err)
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatus, status)
 
-	testutils.TextFileEquals(t, filepath.Join(storageDir, "baz"), expectedOutput)
+	testutils.TextFileEquals(t, filepath.Join(storageDir, jobName), expectedOutput)
 	// stop will not block on anything
 	t.Logf("stop")
-	status, err = r.Stop("baz")
+	status, err = r.Stop(jobName)
 	require.NoError(t, err)
 	assert.Equal(t, expectedStatus, status)
 
 	// output of the job is still accessible
 	buf.Reset()
-	outChan, cancel, err = r.Output("baz")
+	outChan, cancel, err = r.Output(jobName)
 	require.NoError(t, err)
 	require.NotNil(t, cancel)
 	require.NotNil(t, outChan)
@@ -386,11 +401,16 @@ func TestJobWithResources(t *testing.T) {
 	defer restore()
 	mockCgroupProps(t, cgroupRoot, "foo")
 	mockCgroupProps(t, cgroupRoot, "foo/runner")
-	mockCgroupJobProps(t, cgroupRoot, "foo/baz")
+	// set up everything for a job named "baz.1234-1234"
+	restore = runner.MockUUIDNew(func() string {
+		return "1234-1234"
+	})
+	defer restore()
+	mockCgroupJobProps(t, cgroupRoot, "foo/baz.1234-1234")
 
 	restore = cgroup.MockOsRemove(func(p string) error {
 		// group removal
-		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz"), p)
+		require.Equal(t, filepath.Join(cgroupRoot, "foo/baz.1234-1234"), p)
 		return nil
 	})
 	defer restore()
@@ -402,21 +422,28 @@ func TestJobWithResources(t *testing.T) {
 		return nil
 	})
 
-	r, err := runner.NewCgroupRunner(nil)
+	r, err := runner.NewCgroupRunner(&runner.RunnerConfig{
+		JobNamePrefix: "baz.",
+	})
 	require.NoError(t, err)
-	err = r.Start("baz", runner.Config{
+	jobName, err := r.Start(runner.Config{
 		Command:   []string{"/bin/ls", "-l"},
 		CPUMax:    "200 1000",
 		MemoryMax: "102400",
 		IOMax:     "8:16 rbps=102400",
 	})
 	require.NoError(t, err)
-	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/cpu.max"),
+	require.Equal(t, "baz.1234-1234", jobName)
+	testutils.TextFileEquals(t,
+		filepath.Join(cgroupRoot, "foo/baz.1234-1234/cpu.max"),
 		"200 1000\n")
-	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/io.max"),
+	testutils.TextFileEquals(t,
+		filepath.Join(cgroupRoot, "foo/baz.1234-1234/io.max"),
 		"8:16 rbps=102400\n")
-	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/memory.max"),
+	testutils.TextFileEquals(t,
+		filepath.Join(cgroupRoot, "foo/baz.1234-1234/memory.max"),
 		"102400\n")
-	testutils.TextFileEquals(t, filepath.Join(cgroupRoot, "foo/baz/memory.oom.group"),
+	testutils.TextFileEquals(t,
+		filepath.Join(cgroupRoot, "foo/baz.1234-1234/memory.oom.group"),
 		"1\n")
 }
