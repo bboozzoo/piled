@@ -200,9 +200,12 @@ func (r *CgroupRunner) Stop(name string) (*Status, error) {
 		}
 	}
 
+	// unlock so that the process handling can update the job's state
 	js.lock.Unlock()
 	// wait for the job to complete
 	<-js.done
+	// and grab the lock again, an unlock was already scheduled to run on
+	// return
 	js.lock.Lock()
 
 	if err := cgroup.Remove(js.cg); err != nil {
