@@ -3,6 +3,7 @@ package cgroup
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -42,7 +43,7 @@ func WriteProperty(cg, property, value string) error {
 	return f.Close()
 }
 
-var KeyNotFoundError = fmt.Errorf("key not found")
+var KeyNotFoundError = errors.New("key not found")
 
 // ReadKVProperty returns the value of a given key from the property, eg.
 // oom_group_kill from memory.events.local.
