@@ -368,7 +368,6 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 
 		oldSize := int64(0)
 		needLastCheck := true
-	Loop:
 		for {
 			fi, err := f.Stat()
 			if err != nil {
@@ -391,7 +390,7 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 			select {
 			case <-cancelChan:
 				logrus.Tracef("output canceled")
-				break Loop
+				return
 			case <-js.done:
 				if needLastCheck {
 					// do one last check before closing the
