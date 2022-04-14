@@ -9,7 +9,6 @@ import (
 )
 
 func TextFileEquals(t *testing.T, p, val string) {
-	// TODO convert to real checker
 	d, err := os.ReadFile(p)
 	require.NoError(t, err)
 	assert.EqualValues(t, val, string(d))
