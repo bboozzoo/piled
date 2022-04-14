@@ -196,11 +196,12 @@ func (r *CgroupRunner) Stop(name string) (*Status, error) {
 		r.jobsLock.Unlock()
 		return nil, JobNotFoundError
 	}
+	// unlock the jobs lock
+	r.jobsLock.Unlock()
+
 	// lock the individual job
 	js.lock.Lock()
 	defer js.lock.Unlock()
-	// unlock the jobs lock
-	r.jobsLock.Unlock()
 
 	if js.active {
 		logrus.Tracef("job still active, killing")
@@ -288,12 +289,12 @@ func (r *CgroupRunner) Status(name string) (*Status, error) {
 		r.jobsLock.Unlock()
 		return nil, JobNotFoundError
 	}
+	// unlock the jobs lock
+	r.jobsLock.Unlock()
+
 	// lock the individual job
 	js.lock.Lock()
-	// unlock the jobs lock
 	defer js.lock.Unlock()
-
-	r.jobsLock.Unlock()
 
 	return &Status{
 		Active:     js.active,
@@ -318,13 +319,14 @@ func (r *CgroupRunner) Output(name string) (output <-chan []byte, cancel func(),
 		r.jobsLock.Unlock()
 		return nil, nil, JobNotFoundError
 	}
+	// unlock the jobs lock
+	r.jobsLock.Unlock()
+
 	// lock the individual job
 	js.lock.Lock()
 	// this is ok, as further code will only reference the done channel and
 	// keeps an open file
 	defer js.lock.Unlock()
-	// unlock the jobs lock
-	r.jobsLock.Unlock()
 
 	logrus.Tracef("output file: %v", js.outputFile)
 	f, err := os.Open(js.outputFile)
