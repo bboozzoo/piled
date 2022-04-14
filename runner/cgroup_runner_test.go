@@ -31,15 +31,7 @@ func setUpTest(t *testing.T) string {
 	t.Cleanup(restore)
 
 	tmp := t.TempDir()
-	oldTmp, wasSet := os.LookupEnv("TMPDIR")
-	os.Setenv("TMPDIR", tmp)
-	t.Cleanup(func() {
-		if wasSet {
-			os.Setenv("TMPDIR", oldTmp)
-		} else {
-			os.Unsetenv("TMPDIR")
-		}
-	})
+	t.Setenv("TMPDIR", tmp)
 	t.Cleanup(runner.MockCgroupIsV2(func() (bool, error) {
 		return true, nil
 	}))
