@@ -135,7 +135,7 @@ Query the status of a job:
 ```
 $ ./pilec --config client.yaml --address localhost:9999 \
     status pile-7954ce77-4b7f-4fed-b6c6-0868174bf6dd
-active (processes=1234)
+active
 $ ./pilec --config client.yaml --address localhost:9999 \
     status pile-4fc399e9-d813-4df2-b33d-24f876aa407e
 stopped (status=0)
