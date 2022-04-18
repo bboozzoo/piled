@@ -182,9 +182,7 @@ func testOutput(t *testing.T, tc testOutputCase) {
 	runnerCancelCalls := 0
 	// mock cancel which runner.Output() returns
 	runnerCancel := func() {
-		if !assert.Equal(t, 0, runnerCancelCalls) {
-			panic("foo")
-		}
+		require.Equal(t, 0, runnerCancelCalls)
 		runnerCancelCalls++
 		close(outputChan)
 	}
@@ -243,7 +241,6 @@ func testOutput(t *testing.T, tc testOutputCase) {
 		assert.Equal(t, 0, runnerCancelCalls)
 	}
 	assert.Equal(t, "hello from test", buf.String())
-	assert.Equal(t, 3, sendCalls)
 }
 
 func TestOutput(t *testing.T) {
