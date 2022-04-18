@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"sort"
-	"syscall"
 
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
@@ -57,19 +56,17 @@ func (p *piled) Start(_ context.Context, req *pb.JobStartRequest) (*pb.JobStartR
 func statusFromJobStatus(status *runner.Status) *pb.Status {
 	s := &pb.Status{}
 	switch {
-	case !status.Active && status.Signal == int(syscall.SIGKILL) && status.OOM:
-		s.Status = pb.Status_OOM_KILLED
-	case !status.Active && status.ExitStatus != 0:
-		s.Status = pb.Status_FAILED
-	case !status.Active:
-		s.Status = pb.Status_EXITED
 	case status.Active:
 		s.Status = pb.Status_ACTIVE
+	case status.OOM:
+		s.Status = pb.Status_OOM_KILLED
+	case status.ExitStatus != 0:
+		s.Status = pb.Status_FAILED
+	default:
+		s.Status = pb.Status_EXITED
 	}
-	if !status.Active {
-		s.ExitStatus = int32(status.ExitStatus)
-		s.TermSignal = int32(status.Signal)
-	}
+	s.ExitStatus = int32(status.ExitStatus)
+	s.TermSignal = int32(status.Signal)
 	return s
 }
 
