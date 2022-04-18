@@ -41,11 +41,10 @@ func (p *piled) Start(_ context.Context, req *pb.JobStartRequest) (*pb.JobStartR
 	config := runner.Config{
 		Command: req.Command,
 	}
-	if req.Resources != nil {
-		config.CPUMax = req.Resources.CPUMax
-		config.MemoryMax = req.Resources.MemoryMax
-		config.IOMax = req.Resources.IOMax
-	}
+	config.CPUMax = req.Resources.GetCPUMax()
+	config.MemoryMax = req.Resources.GetMemoryMax()
+	config.IOMax = req.Resources.GetIOMax()
+
 	jobName, err := p.runner.Start(config)
 	if err != nil {
 		return nil, fmt.Errorf("cannot start job: %v", err)
