@@ -162,12 +162,10 @@ func (p *PileServer) Serve(ctx context.Context, l net.Listener, authConfig auth.
 	gsrv := grpc.NewServer(grpc.Creds(creds))
 	pb.RegisterJobPileManagerServer(gsrv, &p.pile)
 
-	if ctx != nil {
-		go func() {
-			<-ctx.Done()
-			gsrv.GracefulStop()
-		}()
-	}
+	go func() {
+		<-ctx.Done()
+		gsrv.GracefulStop()
+	}()
 	return gsrv.Serve(l)
 }
 
