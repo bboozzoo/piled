@@ -21,10 +21,9 @@ func ServerTLSConfig(authConfig Config) *tls.Config {
 	return &tls.Config{
 		Certificates: []tls.Certificate{authConfig.Cert},
 		// require client certificates
-		ClientAuth:       tls.RequireAndVerifyClientCert,
-		MinVersion:       tls.VersionTLS13,
-		ClientCAs:        authConfig.CAPool,
-		CurvePreferences: []tls.CurveID{tls.CurveP384},
+		ClientAuth: tls.RequireAndVerifyClientCert,
+		MinVersion: tls.VersionTLS13,
+		ClientCAs:  authConfig.CAPool,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			// client certificate has already been verified, at this
 			// stage all we're left with is some final checks
@@ -44,9 +43,8 @@ func ServerTLSConfig(authConfig Config) *tls.Config {
 
 func ClientTLSConfig(authConfig Config) *tls.Config {
 	return &tls.Config{
-		Certificates:     []tls.Certificate{authConfig.Cert},
-		MinVersion:       tls.VersionTLS13,
-		CurvePreferences: []tls.CurveID{tls.CurveP384},
+		Certificates: []tls.Certificate{authConfig.Cert},
+		MinVersion:   tls.VersionTLS13,
 		// do our own verification instead
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
