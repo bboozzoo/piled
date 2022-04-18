@@ -2,13 +2,16 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"sort"
 
 	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 
 	"github.com/bboozzoo/piled/pile/auth"
 	pb "github.com/bboozzoo/piled/pile/proto"
@@ -77,11 +80,8 @@ func (p *piled) Stop(_ context.Context, req *pb.JobRequest) (*pb.StopResult, err
 		return nil, err
 	}
 	status, err := p.runner.Stop(req.ID)
-	if err == runner.JobNotFoundError {
-		return nil, fmt.Errorf("cannot stop nonexistent job %v", req.ID)
-	}
 	if err != nil {
-		return nil, fmt.Errorf("cannot stop job: %v", err)
+		return nil, fmt.Errorf("cannot stop job: %w", err)
 	}
 	// TODO clean job logs
 	return &pb.StopResult{
@@ -97,10 +97,7 @@ func (p *piled) Status(_ context.Context, req *pb.JobRequest) (*pb.StatusResult,
 	}
 	status, err := p.runner.Status(req.ID)
 	if err != nil {
-		if err == runner.JobNotFoundError {
-			return nil, fmt.Errorf("cannot obtain a status of nonexistent job")
-		}
-		return nil, fmt.Errorf("cannot obtain job status: %v", err)
+		return nil, fmt.Errorf("cannot obtain job status: %w", err)
 	}
 	return &pb.StatusResult{
 		Status: statusFromJobStatus(status),
@@ -115,7 +112,7 @@ func (p *piled) Output(req *pb.JobRequest, out pb.JobPileManager_OutputServer) e
 	}
 	output, cancel, err := p.runner.Output(req.ID)
 	if err != nil {
-		return fmt.Errorf("cannot start collecting job output: %v", err)
+		return fmt.Errorf("cannot start collecting job output: %w", err)
 	}
 
 	for {
@@ -156,10 +153,38 @@ func (p *piled) opAuthorized(tok, op string) error {
 	return NotAuthorizedError
 }
 
+func errToGrpcError(err error) error {
+	if errors.Is(err, runner.JobNotFoundError) {
+		return status.Errorf(codes.NotFound, "error: %v", err)
+	}
+	if errors.Is(err, NotAuthorizedError) {
+		return status.Errorf(codes.PermissionDenied, "error: %v", err)
+	}
+	return err
+}
+
+func (p *piled) callIntercept(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
+	// TODO grab peer and method and verify authorization
+	resp, err = handler(ctx, req)
+	logrus.Tracef("handler err: %v", err)
+	return resp, errToGrpcError(err)
+}
+
+func (p *piled) streamIntercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+	// TODO grab peer and method and verify authorization
+	if err := handler(srv, ss); err != nil {
+		logrus.Tracef("handler err: %v", err)
+		return errToGrpcError(err)
+	}
+	return nil
+}
+
 // Serve makes the server implementation available on a given listener
 func (p *PileServer) Serve(ctx context.Context, l net.Listener, authConfig auth.Config) error {
 	creds := credentials.NewTLS(auth.ServerTLSConfig(authConfig))
-	gsrv := grpc.NewServer(grpc.Creds(creds))
+	gsrv := grpc.NewServer(grpc.Creds(creds),
+		grpc.UnaryInterceptor(p.pile.callIntercept),
+		grpc.StreamInterceptor(p.pile.streamIntercept))
 	pb.RegisterJobPileManagerServer(gsrv, &p.pile)
 
 	go func() {

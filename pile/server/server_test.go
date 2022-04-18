@@ -74,14 +74,14 @@ func TestSimpleTokenAuthzStart(t *testing.T) {
 	res, err := s.Start(context.Background(), &proto.JobStartRequest{
 		Token: "bad",
 	})
-	require.EqualError(t, err, server.NotAuthorizedError.Error())
+	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
 	require.Nil(t, res)
 	assert.Equal(t, 0, startCalled)
 
 	res, err = s.Start(context.Background(), &proto.JobStartRequest{
 		Token: "ro-token",
 	})
-	require.EqualError(t, err, server.NotAuthorizedError.Error())
+	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
 	require.Nil(t, res)
 	assert.Equal(t, 0, startCalled)
 
