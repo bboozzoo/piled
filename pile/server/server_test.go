@@ -293,6 +293,7 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 		},
 	})
 	l := bufconn.Listen(4096)
+	defer l.Close()
 	ac := auth.Config{
 		CAPool: pool,
 		Cert:   serverCert,
@@ -325,6 +326,7 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 		grpc.WithContextDialer(dial),
 		grpc.WithTransportCredentials(creds))
 	require.NoError(t, err)
+	defer conn.Close()
 	c := pb.NewJobPileManagerClient(conn)
 	res, err := c.Start(context.Background(), &pb.JobStartRequest{
 		Token:   "admin-token",
@@ -337,7 +339,7 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 	} else {
 		t.Logf("err: %v", err)
 		require.Error(t, err)
-		assert.Regexp(t, ".*connection closed before server preface received", err.Error())
+		assert.Contains(t, err.Error(), " connection closed before server preface received")
 	}
 	// verify that the server certificate is the same as passed in the
 	// config
@@ -346,10 +348,8 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 	require.NoError(t, err)
 	assert.True(t, wantServerCert.Equal(gotServerCert))
 
-	conn.Close()
 	serveCancel()
 	<-closeC
-	l.Close()
 
 	if tc.log != "" {
 		assert.Contains(t, logBuf.String(), tc.log)
