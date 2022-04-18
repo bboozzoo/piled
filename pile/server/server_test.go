@@ -91,7 +91,6 @@ func TestSimpleTokenAuthzStart(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	assert.Equal(t, 1, startCalled)
-	assert.Regexp(t, `pile\.[a-z0-9]+(-[a-z0-9]+)+`, res.ID)
 	assert.Equal(t, jobName, res.ID)
 }
 
