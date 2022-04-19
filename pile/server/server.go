@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	"github.com/bboozzoo/piled/pile/auth"
@@ -164,14 +165,35 @@ func errToGrpcError(err error) error {
 }
 
 func (p *piled) callIntercept(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp interface{}, err error) {
-	// TODO grab peer and method and verify authorization
+	peer, ok := peer.FromContext(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "no peer")
+	}
+	m, ok := grpc.Method(ctx)
+	if !ok {
+		return nil, status.Errorf(codes.Internal, "no method")
+	}
+	logrus.Tracef("m: %v\n", m)
+	tinfo := peer.AuthInfo.(credentials.TLSInfo)
+	logrus.Tracef("subject: %v", tinfo.State.VerifiedChains[0][0].Subject)
 	resp, err = handler(ctx, req)
 	logrus.Tracef("handler err: %v", err)
 	return resp, errToGrpcError(err)
 }
 
 func (p *piled) streamIntercept(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
-	// TODO grab peer and method and verify authorization
+	peer, ok := peer.FromContext(ss.Context())
+	if !ok {
+		return status.Errorf(codes.Internal, "no peer")
+	}
+	m, ok := grpc.MethodFromServerStream(ss)
+	if !ok {
+		return status.Errorf(codes.Internal, "no method")
+	}
+	logrus.Tracef("m: %v\n", m)
+
+	tinfo := peer.AuthInfo.(credentials.TLSInfo)
+	logrus.Tracef("subject: %v", tinfo.State.VerifiedChains[0][0].Subject)
 	if err := handler(srv, ss); err != nil {
 		logrus.Tracef("handler err: %v", err)
 		return errToGrpcError(err)
