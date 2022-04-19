@@ -73,7 +73,7 @@ var (
 	}
 )
 
-func TestSimpleTokenAuthzStart(t *testing.T) {
+func TestSimpleTokenAuthz(t *testing.T) {
 	startCalled := 0
 	jobName := "pile." + uuid.NewString()
 	s := server.NewWithRunner(&mockRunner{
@@ -81,33 +81,54 @@ func TestSimpleTokenAuthzStart(t *testing.T) {
 			startCalled++
 			return jobName, nil
 		},
+		status: func(name string) (*runner.Status, error) {
+			require.Equal(t, jobName, name)
+			return &runner.Status{
+				Active: true,
+			}, nil
+		},
 	})
 	lcf := listenAndConnect(t, s, validCertsSet)
 	defer lcf.Close()
 
 	c := pb.NewJobPileManagerClient(lcf.conn)
 
-	res, err := c.Start(context.Background(), &proto.JobStartRequest{
-		Token: "bad",
-	})
-	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
-	require.Nil(t, res)
-	assert.Equal(t, 0, startCalled)
-
-	res, err = c.Start(context.Background(), &proto.JobStartRequest{
-		Token: "ro-token",
-	})
-	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
-	require.Nil(t, res)
-	assert.Equal(t, 0, startCalled)
-
-	res, err = c.Start(context.Background(), &proto.JobStartRequest{
-		Token: "admin-token",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, res)
-	assert.Equal(t, 1, startCalled)
-	assert.Equal(t, jobName, res.ID)
+	notAuthorized := `rpc error: code = PermissionDenied desc = error: not authorized`
+	for _, tc := range []struct {
+		tok      string
+		startOk  bool
+		statusOk bool
+	}{
+		{tok: "bad"},
+		{tok: "ro-token", statusOk: true},
+		{tok: "admin-token", startOk: true, statusOk: true},
+	} {
+		startCalled = 0
+		res, err := c.Start(context.Background(), &proto.JobStartRequest{
+			Token: tc.tok,
+		})
+		if tc.startOk {
+			require.NoError(t, err)
+			require.NotNil(t, res)
+			assert.Equal(t, 1, startCalled)
+			assert.Equal(t, jobName, res.ID)
+		} else {
+			require.EqualError(t, err, notAuthorized)
+			require.Nil(t, res)
+			assert.Equal(t, 0, startCalled)
+		}
+		_, err = c.Status(context.Background(), &proto.JobRequest{
+			Token: tc.tok,
+			ID:    jobName,
+		})
+		if tc.statusOk {
+			require.NoError(t, err)
+		} else {
+			require.EqualError(t, err, notAuthorized)
+			require.Nil(t, res)
+			assert.Equal(t, 0, startCalled)
+		}
+	}
 }
 
 func TestSimpleJobCycle(t *testing.T) {
@@ -415,37 +436,4 @@ func TestServerCertValidation(t *testing.T) {
 			log: `expected certificate of pilec not \"CN=not-pilec,O=pile\"`,
 		})
 	})
-}
-
-func TestAuthorization(t *testing.T) {
-	type opsAuthz struct {
-		ok    []string
-		notOk []string
-	}
-	tokensAndOps := map[string]opsAuthz{
-		"admin-token": {
-			ok: []string{"start", "stop", "status", "output"},
-		},
-		"ro-token": {
-			ok:    []string{"status", "output"},
-			notOk: []string{"start", "stop"},
-		},
-		"unknown-token": {
-			notOk: []string{"start", "stop", "status", "output"},
-		},
-	}
-
-	s := server.NewWithRunner(&mockRunner{})
-
-	for tok, ops := range tokensAndOps {
-		for _, op := range ops.ok {
-			err := s.OpAuthorized(tok, op)
-			assert.NoError(t, err, "tok %v op: %v", tok, op)
-		}
-		for _, op := range ops.notOk {
-			err := s.OpAuthorized(tok, op)
-			assert.EqualError(t, err, server.NotAuthorizedError.Error(),
-				"tok: %v op: %v", tok, op)
-		}
-	}
 }
