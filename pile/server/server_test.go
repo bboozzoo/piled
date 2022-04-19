@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"net"
 	"os"
 	"syscall"
@@ -62,6 +63,16 @@ func (m *mockRunner) Output(name string) (output <-chan []byte, cancel func(), e
 	return nil, nil, errNotImplemnted
 }
 
+var (
+	validCertsSet = testDataSet{
+		CAFile:     "../../testdata/ca-cert.pem",
+		ClientCert: "../../testdata/client-cert.pem",
+		ClientKey:  "../../testdata/client-key.pem",
+		ServerCert: "../../testdata/server-cert.pem",
+		ServerKey:  "../../testdata/server-key.pem",
+	}
+)
+
 func TestSimpleTokenAuthzStart(t *testing.T) {
 	startCalled := 0
 	jobName := "pile." + uuid.NewString()
@@ -70,22 +81,27 @@ func TestSimpleTokenAuthzStart(t *testing.T) {
 			startCalled++
 			return jobName, nil
 		},
-	}).Server()
-	res, err := s.Start(context.Background(), &proto.JobStartRequest{
+	})
+	lcf := listenAndConnect(t, s, validCertsSet)
+	defer lcf.Close()
+
+	c := pb.NewJobPileManagerClient(lcf.conn)
+
+	res, err := c.Start(context.Background(), &proto.JobStartRequest{
 		Token: "bad",
 	})
 	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
 	require.Nil(t, res)
 	assert.Equal(t, 0, startCalled)
 
-	res, err = s.Start(context.Background(), &proto.JobStartRequest{
+	res, err = c.Start(context.Background(), &proto.JobStartRequest{
 		Token: "ro-token",
 	})
 	require.EqualError(t, err, `rpc error: code = PermissionDenied desc = error: not authorized`)
 	require.Nil(t, res)
 	assert.Equal(t, 0, startCalled)
 
-	res, err = s.Start(context.Background(), &proto.JobStartRequest{
+	res, err = c.Start(context.Background(), &proto.JobStartRequest{
 		Token: "admin-token",
 	})
 	require.NoError(t, err)
@@ -117,8 +133,11 @@ func TestSimpleJobCycle(t *testing.T) {
 				Active: true,
 			}, nil
 		},
-	}).Server()
-	res, err := s.Start(context.Background(), &proto.JobStartRequest{
+	})
+	lcf := listenAndConnect(t, s, validCertsSet)
+	defer lcf.Close()
+	c := pb.NewJobPileManagerClient(lcf.conn)
+	res, err := c.Start(context.Background(), &proto.JobStartRequest{
 		Token: "admin-token",
 	})
 	require.NoError(t, err)
@@ -126,32 +145,23 @@ func TestSimpleJobCycle(t *testing.T) {
 	assert.Equal(t, 1, startCalled)
 	assert.Equal(t, jobName, res.ID)
 
-	statusRes, err := s.Status(context.Background(), &proto.JobRequest{
+	statusRes, err := c.Status(context.Background(), &proto.JobRequest{
 		Token: "ro-token",
 		ID:    res.ID,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, statusRes)
-	assert.Equal(t, &pb.StatusResult{
-		Status: &pb.Status{
-			Status: pb.Status_ACTIVE,
-		},
-	}, statusRes)
+	assert.Equal(t, pb.Status_ACTIVE, statusRes.Status.Status)
 
-	stopRes, err := s.Stop(context.Background(), &proto.JobRequest{
+	stopRes, err := c.Stop(context.Background(), &proto.JobRequest{
 		Token: "admin-token",
 		ID:    res.ID,
 	})
 	require.NoError(t, err)
 	require.NotNil(t, stopRes)
-	assert.Equal(t, &pb.StopResult{
-		Status: &pb.Status{
-			Status:     pb.Status_OOM_KILLED,
-			ExitStatus: -1,
-			TermSignal: int32(syscall.SIGKILL),
-		},
-	}, stopRes)
-
+	assert.Equal(t, pb.Status_OOM_KILLED, stopRes.Status.Status)
+	assert.Equal(t, int32(-1), stopRes.Status.ExitStatus)
+	assert.Equal(t, int32(syscall.SIGKILL), stopRes.Status.TermSignal)
 }
 
 type mockOutputServer struct {
@@ -182,8 +192,6 @@ func testOutput(t *testing.T, tc testOutputCase) {
 	runnerCancelCalls := 0
 	// mock cancel which runner.Output() returns
 	runnerCancel := func() {
-		require.Equal(t, 0, runnerCancelCalls)
-		runnerCancelCalls++
 		close(outputChan)
 	}
 	s := server.NewWithRunner(&mockRunner{
@@ -195,8 +203,12 @@ func testOutput(t *testing.T, tc testOutputCase) {
 		output: func(name string) (<-chan []byte, func(), error) {
 			return outputChan, runnerCancel, nil
 		},
-	}).Server()
-	res, err := s.Start(context.Background(), &proto.JobStartRequest{
+	})
+	lcf := listenAndConnect(t, s, validCertsSet)
+	defer lcf.Close()
+	c := pb.NewJobPileManagerClient(lcf.conn)
+
+	res, err := c.Start(context.Background(), &proto.JobStartRequest{
 		Token: "admin-token",
 	})
 	require.NoError(t, err)
@@ -205,40 +217,31 @@ func testOutput(t *testing.T, tc testOutputCase) {
 	assert.Regexp(t, `pile\.[a-z0-9]+(-[a-z0-9]+)+`, res.ID)
 
 	var buf bytes.Buffer
-	// pretend we're streaming the output, but close channel after sending
-	// the last chunk
 	outputCtx, outputCancel := context.WithCancel(context.Background())
-	sendCalls := 0
-	err = s.Output(&pb.JobRequest{
+	outc, err := c.Output(outputCtx, &pb.JobRequest{
 		Token: "ro-token",
 		ID:    res.ID,
-	}, &mockOutputServer{
-		ctx: outputCtx,
-		send: func(chunk *pb.OutputChunk) error {
-			sendCalls++
-			buf.Write(chunk.Chunk)
-			if sendCalls == 3 {
-				if tc.callCancel {
-					// pretend that the called has canceled the call
-					// due for eg. connection interrupt
-					outputCancel()
-				} else {
-					// pretend output is complete and the
-					// job has finished
-					close(outputChan)
-				}
-			}
-			return nil
-		},
 	})
-	if tc.callCancel {
-		require.Error(t, err, context.Canceled)
-		// the server's output called the runner's cancel when its context was
-		// canceled
-		assert.Equal(t, 1, runnerCancelCalls)
-	} else {
+	require.NoError(t, err)
+	// 3 chunks were buffered
+	for i := 0; i < 3; i++ {
+		chunk, err := outc.Recv()
 		require.NoError(t, err)
+		buf.Write(chunk.Chunk)
+	}
+	if tc.callCancel {
+		outputCancel()
+		_, err := outc.Recv()
+		require.Error(t, err, context.Canceled)
+	} else {
+		// pretend the job is done
+		close(outputChan)
+		// should not block, the server part is expected to close the
+		// connection
+		_, err := outc.Recv()
+		require.Error(t, err, io.EOF)
 		assert.Equal(t, 0, runnerCancelCalls)
+		outputCancel()
 	}
 	assert.Equal(t, "hello from test", buf.String())
 }
@@ -274,22 +277,26 @@ func testData(t *testing.T, tds testDataSet) (CAPool *x509.CertPool, server, cli
 	return pool, server, client
 }
 
-type serverCertTestCase struct {
-	tds   testDataSet
-	valid bool
-	log   string
+type listenConnectFixture struct {
+	listener    net.Listener
+	conn        *grpc.ClientConn
+	serveCancel func()
+	closeC      chan struct{}
 }
 
-func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
-	logBuf := testutils.MockLogger(t)
-	pool, serverCert, clientCert := testData(t, tc.tds)
-	s := server.NewWithRunner(&mockRunner{
-		start: func(config runner.Config) (name string, err error) {
-			return "1234", nil
-		},
-	})
+func (l *listenConnectFixture) Close() {
+	l.serveCancel()
+	<-l.closeC
+	l.conn.Close()
+	l.listener.Close()
+}
+
+func listenAndConnect(t *testing.T, server *server.PileServer, tds testDataSet) listenConnectFixture {
+	pool, serverCert, clientCert := testData(t, tds)
+	wantServerCert, err := x509.ParseCertificate(serverCert.Certificate[0])
+	require.NoError(t, err)
+
 	l := bufconn.Listen(4096)
-	defer l.Close()
 	ac := auth.Config{
 		CAPool: pool,
 		Cert:   serverCert,
@@ -297,7 +304,7 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 	closeC := make(chan struct{})
 	serveCtx, serveCancel := context.WithCancel(context.Background())
 	go func() {
-		err := s.Serve(serveCtx, l, ac)
+		err := server.Serve(serveCtx, l, ac)
 		require.NoError(t, err)
 		t.Logf("serve done")
 		close(closeC)
@@ -305,7 +312,6 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 	dial := func(context.Context, string) (net.Conn, error) {
 		return l.Dial()
 	}
-	var gotServerCert *x509.Certificate
 	creds := credentials.NewTLS(&tls.Config{
 		Certificates: []tls.Certificate{clientCert},
 		MinVersion:   tls.VersionTLS13,
@@ -313,7 +319,8 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 		InsecureSkipVerify: true,
 		VerifyConnection: func(cs tls.ConnectionState) error {
 			assert.Len(t, cs.PeerCertificates, 1)
-			gotServerCert = cs.PeerCertificates[0]
+			gotServerCert := cs.PeerCertificates[0]
+			assert.True(t, wantServerCert.Equal(gotServerCert))
 			return nil
 		},
 	})
@@ -322,8 +329,32 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 		grpc.WithContextDialer(dial),
 		grpc.WithTransportCredentials(creds))
 	require.NoError(t, err)
-	defer conn.Close()
-	c := pb.NewJobPileManagerClient(conn)
+
+	return listenConnectFixture{
+		listener:    l,
+		conn:        conn,
+		serveCancel: serveCancel,
+		closeC:      closeC,
+	}
+}
+
+type serverCertTestCase struct {
+	tds   testDataSet
+	valid bool
+	log   string
+}
+
+func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
+	logBuf := testutils.MockLogger(t)
+	s := server.NewWithRunner(&mockRunner{
+		start: func(config runner.Config) (name string, err error) {
+			return "1234", nil
+		},
+	})
+	lcf := listenAndConnect(t, s, tc.tds)
+	defer lcf.Close()
+
+	c := pb.NewJobPileManagerClient(lcf.conn)
 	res, err := c.Start(context.Background(), &pb.JobStartRequest{
 		Token:   "admin-token",
 		Command: []string{"ls", "-l"},
@@ -337,15 +368,6 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), " connection closed before server preface received")
 	}
-	// verify that the server certificate is the same as passed in the
-	// config
-	require.NotNil(t, gotServerCert)
-	wantServerCert, err := x509.ParseCertificate(serverCert.Certificate[0])
-	require.NoError(t, err)
-	assert.True(t, wantServerCert.Equal(gotServerCert))
-
-	serveCancel()
-	<-closeC
 
 	if tc.log != "" {
 		assert.Contains(t, logBuf.String(), tc.log)
