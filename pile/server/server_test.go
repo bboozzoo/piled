@@ -64,7 +64,7 @@ func (m *mockRunner) Output(name string) (output <-chan []byte, cancel func(), e
 }
 
 var (
-	validCertsSet = testDataSet{
+	validCertsSet = testCertSet{
 		CAFile:     "../../testdata/ca-cert.pem",
 		ClientCert: "../../testdata/client-cert.pem",
 		ClientKey:  "../../testdata/client-key.pem",
@@ -259,13 +259,13 @@ func TestOutput(t *testing.T) {
 	})
 }
 
-type testDataSet struct {
+type testCertSet struct {
 	CAFile                string
 	ClientCert, ClientKey string
 	ServerCert, ServerKey string
 }
 
-func testData(t *testing.T, tds testDataSet) (CAPool *x509.CertPool, server, client tls.Certificate) {
+func testCerts(t *testing.T, tds testCertSet) (CAPool *x509.CertPool, server, client tls.Certificate) {
 	client, err := tls.LoadX509KeyPair(tds.ClientCert, tds.ClientKey)
 	require.NoError(t, err)
 	server, err = tls.LoadX509KeyPair(tds.ServerCert, tds.ServerKey)
@@ -291,8 +291,8 @@ func (l *listenConnectFixture) Close() {
 	l.listener.Close()
 }
 
-func listenAndConnect(t *testing.T, server *server.PileServer, tds testDataSet) listenConnectFixture {
-	pool, serverCert, clientCert := testData(t, tds)
+func listenAndConnect(t *testing.T, server *server.PileServer, tds testCertSet) listenConnectFixture {
+	pool, serverCert, clientCert := testCerts(t, tds)
 	wantServerCert, err := x509.ParseCertificate(serverCert.Certificate[0])
 	require.NoError(t, err)
 
@@ -339,7 +339,7 @@ func listenAndConnect(t *testing.T, server *server.PileServer, tds testDataSet) 
 }
 
 type serverCertTestCase struct {
-	tds   testDataSet
+	tds   testCertSet
 	valid bool
 	log   string
 }
@@ -379,7 +379,7 @@ func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 func TestServerCertValidation(t *testing.T) {
 	t.Run("valid_cert", func(t *testing.T) {
 		testServeValidCerts(t, serverCertTestCase{
-			tds: testDataSet{
+			tds: testCertSet{
 				CAFile:     "../../testdata/ca-cert.pem",
 				ClientCert: "../../testdata/client-cert.pem",
 				ClientKey:  "../../testdata/client-key.pem",
@@ -391,7 +391,7 @@ func TestServerCertValidation(t *testing.T) {
 	})
 	t.Run("invalid_cert", func(t *testing.T) {
 		testServeValidCerts(t, serverCertTestCase{
-			tds: testDataSet{
+			tds: testCertSet{
 				CAFile:     "../../testdata/ca-cert.pem",
 				ClientCert: "../../testdata/invalid-client-cert.pem",
 				ClientKey:  "../../testdata/invalid-client-key.pem",
@@ -403,7 +403,7 @@ func TestServerCertValidation(t *testing.T) {
 	})
 	t.Run("valid_cert_not_pilec", func(t *testing.T) {
 		testServeValidCerts(t, serverCertTestCase{
-			tds: testDataSet{
+			tds: testCertSet{
 				CAFile:     "../../testdata/ca-cert.pem",
 				ClientCert: "../../testdata/client-not-pilec-cert.pem",
 				ClientKey:  "../../testdata/client-key.pem",
