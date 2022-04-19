@@ -67,7 +67,7 @@ func ClientTLSConfig(authConfig Config) *tls.Config {
 			// a trivial auth check
 			isPilec := serverCert.Subject.CommonName == "piled"
 			if !isPilec {
-				logrus.Errorf("expected certificate of pilec not %q", serverCert.Subject)
+				logrus.Errorf("expected certificate of piled not %q", serverCert.Subject)
 				return fmt.Errorf("expected certificate of piled not %q", serverCert.Subject)
 			}
 			return nil
