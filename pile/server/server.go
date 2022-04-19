@@ -22,7 +22,7 @@ type piled struct {
 	pb.UnimplementedJobPileManagerServer
 	runner Runner
 
-	// dummy authorization which maps a token to a list of operations
+	// dummy authorization which maps a token to a list sorted of operations
 	opAuthz map[string][]string
 }
 
