@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
 	"os"
 	"testing"
 
@@ -61,8 +60,8 @@ func TestServerConfig(t *testing.T) {
 	err = conf.VerifyConnection(tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{invalidNotPilecClientCert},
 	})
-	require.EqualError(t, err, fmt.Sprintf(`expected certificate of pilec not %q`,
-		invalidNotPilecClientCert.Subject))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected certificate of pilec")
 }
 
 func TestClientConfig(t *testing.T) {
@@ -97,8 +96,8 @@ func TestClientConfig(t *testing.T) {
 	err = conf.VerifyConnection(tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{invalidNotPiledServerCert},
 	})
-	require.EqualError(t, err, fmt.Sprintf(`expected certificate of piled not %q`,
-		invalidNotPiledServerCert.Subject))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected certificate of piled")
 
 	err = conf.VerifyConnection(tls.ConnectionState{
 		PeerCertificates: []*x509.Certificate{invalidServerCert},
