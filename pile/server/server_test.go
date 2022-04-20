@@ -16,7 +16,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/bboozzoo/piled/pile/auth"
@@ -114,6 +116,7 @@ func TestSimpleTokenAuthz(t *testing.T) {
 			assert.Equal(t, jobName, res.ID)
 		} else {
 			require.EqualError(t, err, notAuthorized)
+			assert.Equal(t, codes.PermissionDenied, status.Code(err))
 			require.Nil(t, res)
 			assert.Equal(t, 0, startCalled)
 		}
@@ -125,6 +128,7 @@ func TestSimpleTokenAuthz(t *testing.T) {
 			require.NoError(t, err)
 		} else {
 			require.EqualError(t, err, notAuthorized)
+			assert.Equal(t, codes.PermissionDenied, status.Code(err))
 			require.Nil(t, res)
 			assert.Equal(t, 0, startCalled)
 		}
