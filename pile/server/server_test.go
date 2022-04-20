@@ -185,20 +185,6 @@ func TestSimpleJobCycle(t *testing.T) {
 	assert.Equal(t, int32(syscall.SIGKILL), stopRes.Status.TermSignal)
 }
 
-type mockOutputServer struct {
-	grpc.ServerStream
-	ctx  context.Context
-	send func(*pb.OutputChunk) error
-}
-
-func (m *mockOutputServer) Send(chunk *pb.OutputChunk) error {
-	return m.send(chunk)
-}
-
-func (m *mockOutputServer) Context() context.Context {
-	return m.ctx
-}
-
 type testOutputCase struct {
 	callCancel bool
 }
