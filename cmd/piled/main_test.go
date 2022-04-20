@@ -19,6 +19,7 @@ import (
 	"github.com/bboozzoo/piled/pile/auth"
 	pb "github.com/bboozzoo/piled/pile/proto"
 	"github.com/bboozzoo/piled/pile/server"
+	"github.com/bboozzoo/piled/pile/server/servertest"
 	"github.com/bboozzoo/piled/runner"
 )
 
@@ -51,46 +52,14 @@ func client(t *testing.T, addr string, certs clientCerts) (conn *grpc.ClientConn
 	return conn, pb.NewJobPileManagerClient(conn)
 }
 
-type mockRunner struct {
-	start  func(config runner.Config) (name string, err error)
-	stop   func(name string) (*runner.Status, error)
-	status func(name string) (*runner.Status, error)
-}
-
-var errNotImplemnted = errors.New("mock not implemented")
-
-func (m *mockRunner) Start(config runner.Config) (name string, err error) {
-	if m.start != nil {
-		return m.start(config)
-	}
-	return "", errNotImplemnted
-}
-
-func (m *mockRunner) Stop(name string) (*runner.Status, error) {
-	if m.stop != nil {
-		return m.stop(name)
-	}
-	return nil, errNotImplemnted
-}
-func (m *mockRunner) Status(name string) (*runner.Status, error) {
-	if m.status != nil {
-		return m.status(name)
-	}
-	return nil, errNotImplemnted
-}
-
-func (m *mockRunner) Output(name string) (output <-chan []byte, cancel func(), err error) {
-	return nil, nil, errNotImplemnted
-}
-
 func TestSimpleJobCycle(t *testing.T) {
 	jobName := "test-job"
 	t.Cleanup(main.MockRunnerNew(func(_ *runner.RunnerConfig) (server.Runner, error) {
-		return &mockRunner{
-			start: func(_ runner.Config) (string, error) {
+		return &servertest.MockRunner{
+			StartCb: func(_ runner.Config) (string, error) {
 				return jobName, nil
 			},
-			stop: func(name string) (*runner.Status, error) {
+			StopCb: func(name string) (*runner.Status, error) {
 				require.Equal(t, jobName, name)
 				return &runner.Status{
 					Active:     false,
@@ -99,7 +68,7 @@ func TestSimpleJobCycle(t *testing.T) {
 					ExitStatus: -1,
 				}, nil
 			},
-			status: func(name string) (*runner.Status, error) {
+			StatusCb: func(name string) (*runner.Status, error) {
 				require.Equal(t, jobName, name)
 				return &runner.Status{
 					Active: true,
