@@ -125,10 +125,10 @@ func run(opt *options) error {
 }
 
 func main() {
-	logrus.SetLevel(logrus.TraceLevel)
 	if runner.IsShimEntry() {
 		shimEntry()
 	}
+	logrus.SetLevel(logrus.TraceLevel)
 	opt := &options{}
 	_, err := flags.ParseArgs(opt, os.Args[1:])
 	if err != nil {
