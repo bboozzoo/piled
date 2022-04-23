@@ -155,7 +155,8 @@ func TestJobCycleKill(t *testing.T) {
 
 func TestJobCycleOOM(t *testing.T) {
 	testJobCycle(t, jcTest{
-		memoryEventsLocal: "oom_group_kill 1",
+		// pretend there were 2 processes killed by OOM
+		memoryEventsLocal: "oom_kill 2",
 		expectedStop: &runner.Status{
 			Active:     false,
 			ExitStatus: -1,
