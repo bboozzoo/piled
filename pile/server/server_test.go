@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"errors"
 	"io"
 	"net"
 	"os"
@@ -25,45 +24,10 @@ import (
 	"github.com/bboozzoo/piled/pile/proto"
 	pb "github.com/bboozzoo/piled/pile/proto"
 	"github.com/bboozzoo/piled/pile/server"
+	"github.com/bboozzoo/piled/pile/server/servertest"
 	"github.com/bboozzoo/piled/runner"
 	"github.com/bboozzoo/piled/testutils"
 )
-
-type mockRunner struct {
-	start  func(config runner.Config) (name string, err error)
-	stop   func(name string) (*runner.Status, error)
-	status func(name string) (*runner.Status, error)
-	output func(name string) (<-chan []byte, func(), error)
-}
-
-var errNotImplemnted = errors.New("mock not implemented")
-
-func (m *mockRunner) Start(config runner.Config) (name string, err error) {
-	if m.start != nil {
-		return m.start(config)
-	}
-	return "", errNotImplemnted
-}
-
-func (m *mockRunner) Stop(name string) (*runner.Status, error) {
-	if m.stop != nil {
-		return m.stop(name)
-	}
-	return nil, errNotImplemnted
-}
-func (m *mockRunner) Status(name string) (*runner.Status, error) {
-	if m.status != nil {
-		return m.status(name)
-	}
-	return nil, errNotImplemnted
-}
-
-func (m *mockRunner) Output(name string) (output <-chan []byte, cancel func(), err error) {
-	if m.output != nil {
-		return m.output(name)
-	}
-	return nil, nil, errNotImplemnted
-}
 
 var (
 	validCertsSet = testCertSet{
@@ -78,12 +42,12 @@ var (
 func TestSimpleTokenAuthz(t *testing.T) {
 	startCalled := 0
 	jobName := "pile." + uuid.NewString()
-	s := server.NewWithRunner(&mockRunner{
-		start: func(_ runner.Config) (string, error) {
+	s := server.NewWithRunner(&servertest.MockRunner{
+		StartCb: func(_ runner.Config) (string, error) {
 			startCalled++
 			return jobName, nil
 		},
-		status: func(name string) (*runner.Status, error) {
+		StatusCb: func(name string) (*runner.Status, error) {
 			require.Equal(t, jobName, name)
 			return &runner.Status{
 				Active: true,
@@ -138,12 +102,12 @@ func TestSimpleTokenAuthz(t *testing.T) {
 func TestSimpleJobCycle(t *testing.T) {
 	startCalled := 0
 	jobName := "job." + uuid.NewString()
-	s := server.NewWithRunner(&mockRunner{
-		start: func(_ runner.Config) (string, error) {
+	s := server.NewWithRunner(&servertest.MockRunner{
+		StartCb: func(_ runner.Config) (string, error) {
 			startCalled++
 			return jobName, nil
 		},
-		stop: func(name string) (*runner.Status, error) {
+		StopCb: func(name string) (*runner.Status, error) {
 			require.Equal(t, jobName, name)
 			return &runner.Status{
 				Active:     false,
@@ -152,7 +116,7 @@ func TestSimpleJobCycle(t *testing.T) {
 				ExitStatus: -1,
 			}, nil
 		},
-		status: func(name string) (*runner.Status, error) {
+		StatusCb: func(name string) (*runner.Status, error) {
 			require.Equal(t, jobName, name)
 			return &runner.Status{
 				Active: true,
@@ -205,13 +169,13 @@ func testOutput(t *testing.T, tc testOutputCase) {
 	runnerCancel := func() {
 		close(outputChan)
 	}
-	s := server.NewWithRunner(&mockRunner{
-		start: func(_ runner.Config) (string, error) {
+	s := server.NewWithRunner(&servertest.MockRunner{
+		StartCb: func(_ runner.Config) (string, error) {
 			startCalled++
 			// use something more realistic
 			return "pile." + uuid.NewString(), nil
 		},
-		output: func(name string) (<-chan []byte, func(), error) {
+		OutputCb: func(name string) (<-chan []byte, func(), error) {
 			return outputChan, runnerCancel, nil
 		},
 	})
@@ -357,8 +321,8 @@ type serverCertTestCase struct {
 
 func testServeValidCerts(t *testing.T, tc serverCertTestCase) {
 	logBuf := testutils.MockLogger(t)
-	s := server.NewWithRunner(&mockRunner{
-		start: func(config runner.Config) (name string, err error) {
+	s := server.NewWithRunner(&servertest.MockRunner{
+		StartCb: func(config runner.Config) (name string, err error) {
 			return "1234", nil
 		},
 	})

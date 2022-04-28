@@ -1,0 +1,3 @@
+cert: server-cert.pem
+key: server-key.pem
+ca-cert: ca-cert.pem

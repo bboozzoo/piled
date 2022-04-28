@@ -1,0 +1,4 @@
+cert: client-cert.pem
+key: client-key.pem
+ca-cert: ca-cert.pem
+token: ro-token

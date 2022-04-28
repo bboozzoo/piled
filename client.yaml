@@ -1,0 +1,15 @@
+# client's certificate and key, can be an absolute path or relative wrt. this
+# config file
+cert: certs/client-cert.pem
+key: certs/client-key.pem
+# cert: testdata/client-cert.pem
+# key: testdata/client-key.pem
+
+# CA certificate
+ca-cert: certs/ca-cert.pem
+
+# server address, in the format accepted by grpc address parser
+address: dns:localhost:9999
+
+# authorization token
+token: admin-token

@@ -250,10 +250,10 @@ func (r *CgroupRunner) jobWaitUntilDoneUnlocked(js *jobState) {
 			if ws.Signaled() {
 				if ws.Signal() == os.Kill {
 					// maybe OOM
-					gk, err := cgroup.ReadKVProperty(js.cg, "memory.events.local", "oom_group_kill")
+					oomk, err := cgroup.ReadKVProperty(js.cg, "memory.events.local", "oom_kill")
 					if err != nil {
 						logrus.Tracef("cannot process memory.events.local: %v", err)
-					} else if gk == "1" {
+					} else if oomk != "0" {
 						logrus.Tracef("OOM kill")
 						js.oomKill = true
 					}

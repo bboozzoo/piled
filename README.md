@@ -9,6 +9,7 @@ stating/stopping/monitoring are carried out using a command line tool pilec.
 Is a daemon that manages and supervises the jobs. 
 
 The daemon can be started as a unit:
+
 ```
 [Unit]
 Description=piled daemon
@@ -21,7 +22,7 @@ Delegate=true
 Or through systemd-run:
 
 ```
-$ systemd-run --wait --collect -p Delegate=true -- /usr/bin/piled --address localhost:9999
+$ sudo systemd-run -p Delegate=true -t --wait -- ./piled --config $PWD/server.yaml
 ```
 
 The daemon allows fundamental operations of starting a job, stopping it,
@@ -30,6 +31,21 @@ observing its output and querying the status.
 Each job is assigned an ID by the daemon, which has the format `pile-<uuid>` and
 is returned to the client in the start response. Job ID needs to be used for all 
 requests for that job.
+
+The daemon uses a simple config file:
+
+```yaml
+# server's certificate and key, can be an absolute path or relative wrt. this
+# config file
+cert: certs/server-cert.pem
+key: certs/server-key.pem
+
+# CA certificate that
+ca-cert: certs/ca-cert.pem
+
+# address to listen on, format accepted by URL parse, the hostname is ignored
+listen-address: tcp://localhost:9999
+```
 
 ### Process isolation
 
@@ -117,38 +133,38 @@ set specific environment bits, the command needs to be wrapped by shell, eg. `sh
 
 Example usage. Start a trivial job:
 ```
-$ ./pilec --config client.yaml --address localhost:9999 \
-    start -- bash -c 'echo Hello from job'
-pile-c74cb008-9b63-439c-a158-12cedcf41733
+$ ./pilec --config client.yaml \
+    start -- /usr/bin/bash -c 'echo Hello from job'
+pile.c74cb008-9b63-439c-a158-12cedcf41733
 ```
 
 Start a long running job:
 
 ```
-$ ./pilec --config client.yaml --address localhost:9999 \
-    start -- bash -c 'while true; do echo "$(date) -- log"; sleep 5; done'
-pile-7954ce77-4b7f-4fed-b6c6-0868174bf6dd
+$ ./pilec --config client.yaml \
+    start -- /usr/bin/bash -c 'while true; do echo "$(date) -- log"; sleep 5; done'
+pile.7954ce77-4b7f-4fed-b6c6-0868174bf6dd
 ```
 
 Query the status of a job:
 
 ```
-$ ./pilec --config client.yaml --address localhost:9999 \
-    status pile-7954ce77-4b7f-4fed-b6c6-0868174bf6dd
-active (processes=1234)
-$ ./pilec --config client.yaml --address localhost:9999 \
-    status pile-4fc399e9-d813-4df2-b33d-24f876aa407e
-stopped (status=0)
-$ ./pilec --config client.yaml --address localhost:9999 \
-    status pile-15343990-15aa-4d80-a82b-8896ab1e1de9
+$ ./pilec --config client.yaml  \
+    status pile.7954ce77-4b7f-4fed-b6c6-0868174bf6dd
+active
+$ ./pilec --config client.yaml \
+    status pile.4fc399e9-d813-4df2-b33d-24f876aa407e
+exited
+$ ./pilec --config client.yaml \
+    status pile.15343990-15aa-4d80-a82b-8896ab1e1de9
 failed (status=3)
 ```
 
 See the output of a job:
 
 ```
-$ ./pilec --config client.yaml --address localhost:5555 \
-    status pile-7954ce77-4b7f-4fed-b6c6-0868174bf6dd
+$ ./pilec --config client.yaml \
+    status pile.7954ce77-4b7f-4fed-b6c6-0868174bf6dd
 Fri Apr  8 20:38:07 CEST 2022 -- log
 Fri Apr  8 20:38:12 CEST 2022 -- log
 Fri Apr  8 20:38:17 CEST 2022 -- log
@@ -158,9 +174,31 @@ Fri Apr  8 20:38:17 CEST 2022 -- log
 Stop a job:
 
 ```
-$ ./pilec --config client.yaml stop pile-7954ce77-4b7f-4fed-b6c6-0868174bf6dd
+$ ./pilec --config client.yaml stop pile.7954ce77-4b7f-4fed-b6c6-0868174bf6dd
 stopped (status=0)
 ```
+
+Uses a simple config file:
+
+```yaml
+# client's certificate and key
+cert: certs/client-cert.pem
+key: certs/client-key.pem
+# cert: testdata/client-cert.pem
+# key: testdata/client-key.pem
+
+# CA certificate
+ca-cert: certs/ca-cert.pem
+
+# server address, in the format accepted by grpc address parser
+address: dns:localhost:9999
+
+# authorization token
+token: admin-token
+```
+
+Overrides for `address` and `token` can be passed in the command line as
+`--address` and `--token` parameters.
 
 ## Other limitations
 
